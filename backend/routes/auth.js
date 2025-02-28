@@ -185,63 +185,110 @@ router.post('/login', async (req, res) => {
 
     // Fetch user's registered credentials
     const user = await User.findOne({ where: { username }, include: Credential });
-    if (!user || user.Credentials.length === 0) {
+    if (!user || !user.Credentials || user.Credentials.length === 0) {
       return res.status(400).json({ error: 'User not found or no credentials registered' });
     }
 
-    const credentialIds = user.Credentials.map(cred => cred.credentialId);
-
+    // Generate assertion options
     const assertionOptions = await fido2.assertionOptions();
-    assertionOptions.allowCredentials = credentialIds.map(id => ({ id, type: 'public-key' }));
 
-    // Store challenge and username in session
+    // Convert challenge to base64url string
+    assertionOptions.challenge = bufferToBase64url(assertionOptions.challenge);
+
+    // Format credential IDs
+    assertionOptions.allowCredentials = user.Credentials.map(cred => ({
+      id: cred.credentialId,
+      type: 'public-key',
+      transports: ['internal']
+    }));
+
+    // Store in session
     req.session.challenge = assertionOptions.challenge;
     req.session.username = username;
+    await req.session.save();
 
+    console.log('Sending assertion options:', assertionOptions);
     res.json(assertionOptions);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Login initiation failed' });
+    console.error('Login initiation error:', err);
+    res.status(500).json({ error: 'Login initiation failed', message: err.message });
   }
 });
 
 //  Complete Login: verify assertion response
-router.post('/login/response', async (req, res) => {
+router.post('/login/response', methodCheck, async (req, res) => {
   try {
-    const assertionResponse = req.body;
-    const expectedChallenge = req.session.challenge;
-    const username = req.session.username;
+    console.log('Login response received:', req.body);
+    const { id, rawId, type, response } = req.body;
 
-    if (!expectedChallenge || !username) {
-      return res.status(400).json({ error: 'No challenge found in session' });
+    if (!req.session?.challenge) {
+      throw new Error('No challenge found in session');
     }
 
-    // Fetch the user and corresponding credential
-    const user = await User.findOne({ where: { username }, include: Credential });
-    if (!user) return res.status(400).json({ error: 'User not found' });
+    const username = req.session.username;
+    if (!username) {
+      throw new Error('No username found in session');
+    }
 
-    // For simplicity, we select the first registered credential
+    // Get user and credential
+    const user = await User.findOne({
+      where: { username },
+      include: [{ model: Credential }]
+    });
+
+    if (!user || !user.Credentials.length) {
+      throw new Error('No credentials found for user');
+    }
+
     const credential = user.Credentials[0];
 
-    const assertionExpectations = {
-      challenge: expectedChallenge,
-      origin: process.env.ORIGIN,
+    // Create assertion response object with proper Buffer conversions
+    const assertionResponse = {
+      id: rawId,
+      rawId: Uint8Array.from(base64URLToBuffer(rawId)).buffer,
+      response: {
+        authenticatorData: Uint8Array.from(base64URLToBuffer(response.authenticatorData)).buffer,
+        clientDataJSON: Uint8Array.from(base64URLToBuffer(response.clientDataJSON)).buffer,
+        signature: Uint8Array.from(base64URLToBuffer(response.signature)).buffer
+      },
+      type: type
+    };
+
+    const result = await fido2.assertionResult(assertionResponse, {
+      challenge: base64URLToBuffer(req.session.challenge),
+      origin: process.env.ORIGIN || 'http://localhost:5173',
       factor: 'either',
       publicKey: credential.publicKey,
       prevCounter: credential.counter,
-      userHandle: Buffer.from(username).toString('base64'),
-    };
+      rpId: process.env.RP_ID || 'localhost',
+      userHandle: null,  // Explicitly set to null since we're not using it
+      userVerification: "preferred"  // Add this line
+    });
 
-    const assertionResult = await fido2.assertionResult(assertionResponse, assertionExpectations);
+    // Update counter
+    await credential.update({ counter: result.authnrData.get('counter') });
 
-    // Update the counter in the database
-    credential.counter = assertionResult.authnrData.get('counter');
-    await credential.save();
+    // Clear session challenge and set authenticated
+    req.session.challenge = null;
+    req.session.authenticated = true;  // Add this line
+    await req.session.save();
 
-    res.json({ status: 'ok', message: 'Authentication successful' });
+    res.json({ 
+      status: 'ok', 
+      message: 'Authentication successful',
+      user: {
+        username: user.username,
+        displayName: user.displayName
+      }
+    });
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Authentication verification failed' });
+    console.error('Login verification error:', err);
+    res.status(500).json({
+      error: 'Authentication verification failed',
+      message: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 });
 

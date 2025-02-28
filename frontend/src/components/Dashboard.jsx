@@ -8,7 +8,7 @@ const Dashboard = () => {
   const handleLogout = async () => {
     try {
       await axios.post('http://localhost:3001/auth/logout');
-      navigate('/register');
+      navigate('/login');
     } catch (error) {
       console.error('Logout failed:', error);
     }

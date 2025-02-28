@@ -58,8 +58,9 @@ const Register = ({ onAuthSuccess }) => {
                 }
             }
         });
-
-        console.log('Credential created:', credential);
+        
+        // Hide this due to security concerns
+        // console.log('Credential created:', credential);
 
         // Format credential for transmission
         const credentialResponse = {
@@ -72,15 +73,17 @@ const Register = ({ onAuthSuccess }) => {
             }
         };
 
-        console.log('Sending credential response:', {
-            id: typeof credentialResponse.id,
-            rawId: typeof credentialResponse.rawId,
-            type: credentialResponse.type,
-            response: {
-                clientDataJSON: typeof credentialResponse.response.clientDataJSON,
-                attestationObject: typeof credentialResponse.response.attestationObject
-            }
-        });
+        
+        // Hide this due to security concerns
+        // console.log('Sending credential response:', {
+        //     id: typeof credentialResponse.id,
+        //     rawId: typeof credentialResponse.rawId,
+        //     type: credentialResponse.type,
+        //     response: {
+        //         clientDataJSON: typeof credentialResponse.response.clientDataJSON,
+        //         attestationObject: typeof credentialResponse.response.attestationObject
+        //     }
+        // });
 
         //  Send credential to server
         const finalizeRes = await axios.post(
@@ -95,7 +98,7 @@ const Register = ({ onAuthSuccess }) => {
             }
         );
 
-        console.log('Server response:', finalizeRes);
+        // console.log('Server response:', finalizeRes);
 
         if (finalizeRes.data.error) {
             throw new Error(finalizeRes.data.error);
@@ -107,7 +110,10 @@ const Register = ({ onAuthSuccess }) => {
             navigate('/dashboard');
             console.log('Registration completed successfully');
         } else {
-            throw new Error('Registration failed: ' + (finalizeRes.data.message || 'Unknown error'));
+            // Display Data Error
+            // throw new Error('Registration failed: ' + (finalizeRes.data.message || 'Unknown error'));
+
+            throw new Error('Registration failed: The operation either timed out');
         }
     } catch (error) {
         console.error('Registration error details:', {
@@ -162,6 +168,9 @@ function base64URLToBuffer(base64URL) {
       <input placeholder="Display Name" onChange={(e) => setDisplayName(e.target.value)} />
       <button onClick={handleRegister}>Register</button>
       <p>{message}</p>
+      <p>
+        <a href="/login">Already registered? Login here</a>
+      </p>
     </div>
   );
 };
