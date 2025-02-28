@@ -3,6 +3,7 @@ const { Fido2Lib } = require('fido2-lib');
 const router = express.Router();
 const User = require('../models/User');
 const Credential = require('../models/Credential');
+const crypto = require('crypto');
 
 // Configure fido2-lib using environment variables where needed
 const fido2 = new Fido2Lib({
@@ -20,9 +21,28 @@ const bufferToBase64url = (buffer) =>
     .replace(/\//g, '_')
     .replace(/=+$/, '');
 
+// Helper function to convert base64URL to buffer
+const base64URLToBuffer = (base64URL) => {
+  const base64 = base64URL.replace(/-/g, '+').replace(/_/g, '/');
+  const padLen = (4 - (base64.length % 4)) % 4;
+  const padded = base64 + '='.repeat(padLen);
+  return Buffer.from(padded, 'base64');
+};
+
+// Add method check middleware
+const methodCheck = (req, res, next) => {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ 
+      error: 'Method not allowed', 
+      message: 'Only POST requests are allowed'
+    });
+  }
+  next();
+};
+
 // ---------- Registration ----------
 
-// Step 1: Initiate Registration: send options (challenge, etc.)
+//  Initiate Registration: send options (challenge, etc.)
 router.post('/register', async (req, res) => {
   try {
     const { username, displayName } = req.body;
@@ -30,70 +50,134 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Missing username or displayName' });
     }
 
+    console.log('Generating registration options for:', username);
+
     // Generate registration options
     const registrationOptions = await fido2.attestationOptions();
 
+    // Convert challenge to base64url
+    registrationOptions.challenge = bufferToBase64url(registrationOptions.challenge);
+
     // Customize options with user info
     registrationOptions.user = {
-      id: Buffer.from(username).toString('base64'),
+      id: crypto.randomBytes(32),
       name: username,
-      displayName,
+      displayName: displayName
     };
 
-    // Store challenge and user info in session
+    // Convert user id to base64url
+    registrationOptions.user.id = bufferToBase64url(registrationOptions.user.id);
+
+    // Add rp configuration
+    registrationOptions.rp = {
+      name: process.env.RP_NAME || 'FIDO2 Demo',
+      id: process.env.RP_ID || window.location.hostname
+    };
+
+    // Store in session
     req.session.challenge = registrationOptions.challenge;
     req.session.username = username;
     req.session.displayName = displayName;
 
+    console.log('Registration options generated:', registrationOptions);
     res.json(registrationOptions);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Registration initiation failed' });
+    console.error('Error creating registration options:', err);
+    res.status(500).json({ error: 'Error creating registration options', details: err.message });
   }
 });
 
-// Step 2: Complete Registration: verify attestation response
-router.post('/register/response', async (req, res) => {
+//  Complete Registration: verify attestation response
+router.post('/register/response', methodCheck, async (req, res) => {
   try {
-    const attestationResponse = req.body;
-    const expectedChallenge = req.session.challenge;
+    console.log('Received registration response');
+    
+    if (!req.session?.challenge) {
+      throw new Error('No challenge found in session');
+    }
+
+    const { rawId, type, response } = req.body;
+
+    // Create the attestation response with proper ArrayBuffer format
+    const attestationResponse = {
+      rawId: Uint8Array.from(base64URLToBuffer(rawId)).buffer,
+      id: rawId, // Use rawId as the id
+      response: {
+        attestationObject: Uint8Array.from(base64URLToBuffer(response.attestationObject)).buffer,
+        clientDataJSON: Uint8Array.from(base64URLToBuffer(response.clientDataJSON)).buffer
+      },
+      type: type,
+      getClientExtensionResults: () => ({})
+    };
+
+    console.log('Verifying with parameters:', {
+      challenge: req.session.challenge,
+      origin: process.env.ORIGIN || 'http://localhost:5173',
+      rpId: process.env.RP_ID || 'localhost'
+    });
+
+    const attestationResult = await fido2.attestationResult(
+      attestationResponse,
+      {
+        challenge: Uint8Array.from(base64URLToBuffer(req.session.challenge)).buffer,
+        origin: process.env.ORIGIN || 'http://localhost:5173',
+        factor: 'either',
+        rpId: process.env.RP_ID || 'localhost'
+      }
+    );
+
+    // Save user and credential
     const username = req.session.username;
     const displayName = req.session.displayName;
 
-    if (!expectedChallenge || !username) {
-      return res.status(400).json({ error: 'No challenge found in session' });
-    }
-
-    const attestationExpectations = {
-      challenge: expectedChallenge,
-      origin: process.env.ORIGIN,
-      factor: 'either',
-    };
-
-    const attestationResult = await fido2.attestationResult(attestationResponse, attestationExpectations);
-
-    // Save user and credential info in the database
     let user = await User.findOne({ where: { username } });
     if (!user) {
-      user = await User.create({ username, displayName });
+      user = await User.create({ 
+        username, 
+        displayName
+      });
     }
-    await Credential.create({
+
+    // Create credential record - Fix: use rawId instead of undefined id
+    const credential = await Credential.create({
       userId: user.id,
-      credentialId: bufferToBase64url(attestationResult.authnrData.get('credId')),
+      credentialId: rawId, // Changed from id to rawId
       publicKey: attestationResult.authnrData.get('credentialPublicKeyPem'),
-      counter: attestationResult.authnrData.get('counter'),
+      counter: attestationResult.authnrData.get('counter') || 0
     });
 
-    res.json({ status: 'ok', message: 'Registration successful' });
+    // Clear challenge from session
+    req.session.challenge = null;
+    await req.session.save();
+
+    res.json({ 
+      status: 'ok', 
+      message: 'Registration successful'
+    });
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Registration verification failed' });
+    console.error('Registration error:', err);
+    res.status(500).json({
+      error: 'Registration failed',
+      message: err.message,
+      details: err.stack
+    });
   }
+});
+
+// Add logout route
+router.post('/logout', (req, res) => {
+  req.session.destroy((err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Logout failed' });
+    }
+    res.json({ status: 'ok', message: 'Logged out successfully' });
+  });
 });
 
 // ---------- Authentication (Login) ----------
 
-// Step 1: Initiate Login: generate assertion options
+// Initiate Login: generate assertion options
 router.post('/login', async (req, res) => {
   try {
     const { username } = req.body;
@@ -121,7 +205,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Step 2: Complete Login: verify assertion response
+//  Complete Login: verify assertion response
 router.post('/login/response', async (req, res) => {
   try {
     const assertionResponse = req.body;
