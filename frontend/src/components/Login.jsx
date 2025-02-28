@@ -79,7 +79,7 @@ const Login = ({ onAuthSuccess }) => {
 
       if (verificationRes.data.status === 'ok') {
         setMessage('Login successful!');
-        onAuthSuccess();
+        onAuthSuccess(verificationRes.data.user); // Pass user data to parent
         navigate('/dashboard');
       } else {
         throw new Error(verificationRes.data.message || 'Login failed');

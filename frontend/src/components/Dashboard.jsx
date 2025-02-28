@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
-const Dashboard = () => {
+const Dashboard = ({ user }) => {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -16,8 +16,12 @@ const Dashboard = () => {
 
   return (
     <div>
-      <h1>Dashboard</h1>
-      <p>Registration Complete! You are now authenticated.</p>
+      <h1>Welcome, {user?.displayName || 'User'}!</h1>
+      <p>You are now authenticated and logged in.</p>
+      <div>
+        <p>Username: {user?.username}</p>
+        <p>Display Name: {user?.displayName}</p>
+      </div>
       <button onClick={handleLogout}>Logout</button>
     </div>
   );
