@@ -8,18 +8,32 @@ const authRoutes = require('./routes/auth');
 
 const app = express();
 
+// Helper function to get clean origin
+const getCleanOrigin = () => {
+  // Remove trailing slash if present
+  const origin = process.env.ORIGIN || 'http://localhost:5173';
+  return origin.replace(/\/$/, '');
+};
+
 // Basic middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Configure CORS before other middleware
 app.use(cors({
-    origin: 'http://localhost:5173', // <-- Compare with .env ORIGIN setting
+    origin: getCleanOrigin(), // Use clean origin value
     credentials: true,
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Accept'],
     maxAge: 600 // Reduce preflight requests
 }));
+
+// Log the CORS and RP settings on startup
+console.log('======= WebAuthn Configuration =======');
+console.log(`Origin: ${getCleanOrigin()}`);
+console.log(`RP ID: ${process.env.RP_ID || 'localhost'}`);
+console.log(`RP Name: ${process.env.RP_NAME || 'FIDO2 Demo'}`);
+console.log('====================================');
 
 // Helmet configuration
 app.use(helmet({

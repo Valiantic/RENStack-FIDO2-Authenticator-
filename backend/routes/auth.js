@@ -29,6 +29,26 @@ const base64URLToBuffer = (base64URL) => {
   return Buffer.from(padded, 'base64');
 };
 
+// Helper function to get and validate the origin
+const getOrigin = () => {
+  // Ensure the origin is properly formatted (no trailing slash)
+  const origin = process.env.ORIGIN || 'http://localhost:5173';
+  return origin.replace(/\/$/, '');
+};
+
+// Helper function to get rpId from origin or env
+const getRpId = () => {
+  if (process.env.RP_ID) return process.env.RP_ID;
+  try {
+    // Extract hostname from origin as fallback
+    const originUrl = new URL(getOrigin());
+    return originUrl.hostname;
+  } catch (e) {
+    console.error('Failed to parse origin URL:', e);
+    return 'localhost';
+  }
+};
+
 // Add method check middleware
 const methodCheck = (req, res, next) => {
   if (req.method !== 'POST') {
@@ -68,11 +88,14 @@ router.post('/register', async (req, res) => {
     // Convert user id to base64url
     registrationOptions.user.id = bufferToBase64url(registrationOptions.user.id);
 
-    // Add rp configuration
+    // Add rp configuration with validated rpId
+    const rpId = getRpId();
     registrationOptions.rp = {
       name: process.env.RP_NAME || 'FIDO2 Demo',
-      id: process.env.RP_ID || window.location.hostname
+      id: rpId
     };
+
+    console.log(`Using RP ID: ${rpId}`);
 
     // Store in session
     req.session.challenge = registrationOptions.challenge;
@@ -113,19 +136,23 @@ router.post('/register/response', methodCheck, async (req, res) => {
       getClientExtensionResults: () => ({})
     };
 
+    // Get properly formatted origin and rpId
+    const origin = getOrigin();
+    const rpId = getRpId();
+
     console.log('Verifying with parameters:', {
       challenge: req.session.challenge,
-      origin: process.env.ORIGIN || 'http://localhost:5173',
-      rpId: process.env.RP_ID || 'localhost'
+      origin: origin,
+      rpId: rpId
     });
 
     const attestationResult = await fido2.attestationResult(
       attestationResponse,
       {
         challenge: Uint8Array.from(base64URLToBuffer(req.session.challenge)).buffer,
-        origin: process.env.ORIGIN || 'http://localhost:5173',
+        origin: origin,
         factor: 'either',
-        rpId: process.env.RP_ID || 'localhost'
+        rpId: rpId
       }
     );
 
@@ -257,15 +284,25 @@ router.post('/login/response', methodCheck, async (req, res) => {
       type: type
     };
 
+    // Get properly formatted origin and rpId
+    const origin = getOrigin();
+    const rpId = getRpId();
+
+    console.log('Verifying login with:', {
+      origin: origin,
+      rpId: rpId,
+      challenge: req.session.challenge.substring(0, 10) + '...'
+    });
+
     const result = await fido2.assertionResult(assertionResponse, {
       challenge: base64URLToBuffer(req.session.challenge),
-      origin: process.env.ORIGIN || 'http://localhost:5173',
+      origin: origin,
       factor: 'either',
       publicKey: credential.publicKey,
       prevCounter: credential.counter,
-      rpId: process.env.RP_ID || 'localhost',
-      userHandle: null,  // Explicitly set to null since we're not using it
-      userVerification: "preferred"  // Add this line
+      rpId: rpId,
+      userHandle: null,
+      userVerification: "preferred"
     });
 
     // Update counter
