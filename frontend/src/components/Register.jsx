@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 // Configure axios defaults
 axios.defaults.withCredentials = true;
 axios.defaults.headers.common['Accept'] = 'application/json';
 axios.defaults.headers.post['Content-Type'] = 'application/json';
 
-const Register = ({ onAuthSuccess }) => {
+const Register = () => {
   const navigate = useNavigate();
+  const { register } = useAuth();
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [message, setMessage] = useState('');
@@ -98,7 +100,7 @@ const Register = ({ onAuthSuccess }) => {
             }
         );
 
-        // console.log('Server response:', finalizeRes);
+        console.log('Server response:', finalizeRes.data); // Log the full response for debugging
 
         if (finalizeRes.data.error) {
             throw new Error(finalizeRes.data.error);
@@ -106,11 +108,22 @@ const Register = ({ onAuthSuccess }) => {
 
         if (finalizeRes.data.status === 'ok') {
             setMessage('Registration successful!');
-            onAuthSuccess();
+            
+            // Create user object if not directly provided in the response
+            const userData = finalizeRes.data.user || {
+                username: username,
+                displayName: displayName,
+                // Add any other fields that might come from the server
+                id: finalizeRes.data.id || finalizeRes.data.userId || username
+            };
+            
+            console.log('User data being passed to context:', userData);
+            
+            // Pass user data to the context
+            register(userData);
             navigate('/dashboard');
-            console.log('Registration completed successfully');
         } else {
-            // Display Data Error
+// Display Data Error
             // throw new Error('Registration failed: ' + (finalizeRes.data.message || 'Unknown error'));
 
             throw new Error('Registration failed: The operation either timed out');

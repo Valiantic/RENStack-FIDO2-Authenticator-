@@ -1,26 +1,48 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
 
-const Dashboard = ({ user }) => {
+const Dashboard = () => {
   const navigate = useNavigate();
+  const { user, logout, loading } = useAuth();
+
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate('/login');
+    }
+  }, [user, loading, navigate]);
+
+  console.log('Current user in Dashboard:', user);
 
   const handleLogout = async () => {
     try {
       await axios.post('http://localhost:3001/auth/logout');
+      logout(); // Clear user from context
       navigate('/login');
     } catch (error) {
       console.error('Logout failed:', error);
     }
   };
 
+  // Show loading state while checking authentication
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+
+  // Show not authenticated message if no user
+  if (!user) {
+    return <div>Not authenticated. Redirecting to login...</div>;
+  }
+
   return (
     <div>
-      <h1>Welcome, {user?.displayName || 'User'}!</h1>
+      <h1>Welcome, {user?.displayName || user?.username || 'User'}!</h1>
       <p>You are now authenticated and logged in.</p>
       <div>
-        <p>Username: {user?.username}</p>
-        <p>Display Name: {user?.displayName}</p>
+        <p>Username: {user?.username || 'Not available'}</p>
+        <p>Display Name: {user?.displayName || 'Not available'}</p>
       </div>
       <button onClick={handleLogout}>Logout</button>
     </div>

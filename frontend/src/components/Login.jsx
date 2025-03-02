@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
-const Login = ({ onAuthSuccess }) => {
+const Login = () => {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [username, setUsername] = useState('');
   const [message, setMessage] = useState('');
 
@@ -26,7 +28,7 @@ const Login = ({ onAuthSuccess }) => {
 
       // Hide due to security measures
       // console.log('Received assertion options:', assertionOptions);
-
+      
       // Ensure challenge is a string before conversion
       const challenge = assertionOptions.challenge.toString();
       assertionOptions.challenge = base64URLToBuffer(challenge);
@@ -44,7 +46,6 @@ const Login = ({ onAuthSuccess }) => {
         publicKey: assertionOptions
       });
 
-      
       // Hide due to security measures
       // console.log('Credential received:', credential);
 
@@ -61,7 +62,6 @@ const Login = ({ onAuthSuccess }) => {
         }
       };
 
-      
       // Hide due to security measures
       // console.log('Sending assertion response:', assertionResponse);
 
@@ -79,7 +79,7 @@ const Login = ({ onAuthSuccess }) => {
 
       if (verificationRes.data.status === 'ok') {
         setMessage('Login successful!');
-        onAuthSuccess(verificationRes.data.user); // Pass user data to parent
+        login(verificationRes.data.user); // Use context login function
         navigate('/dashboard');
       } else {
         throw new Error(verificationRes.data.message || 'Login failed');
