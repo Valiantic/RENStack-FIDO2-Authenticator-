@@ -83,7 +83,10 @@ router.post('/register', async (req, res) => {
     res.json(registrationOptions);
   } catch (err) {
     console.error('Error creating registration options:', err);
-    res.status(500).json({ error: 'Error creating registration options', details: err.message });
+    res.status(500).json({ 
+      error: 'Error creating registration options', 
+      details: err.message 
+    });
   }
 });
 

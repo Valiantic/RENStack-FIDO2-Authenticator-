@@ -14,7 +14,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Configure CORS before other middleware
 app.use(cors({
-    origin: 'http://localhost:5173', // Specific origin instead of wildcard
+    origin: 'http://localhost:5173', // <-- Compare with .env ORIGIN setting
     credentials: true,
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Accept'],
