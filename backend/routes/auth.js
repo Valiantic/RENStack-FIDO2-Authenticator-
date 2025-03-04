@@ -77,6 +77,12 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Missing username or displayName' });
     }
 
+    // Check if username already exists
+    const existingUser = await User.findOne({ where: { username } });
+    if (existingUser) {
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+
     console.log('Generating registration options for:', username);
 
     // Generate registration options
