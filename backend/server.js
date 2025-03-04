@@ -10,8 +10,15 @@ const app = express();
 
 // Helper function to get clean origin
 const getCleanOrigin = () => {
+  // Use FRONTEND_PORT from environment if available
+  const frontendPort = process.env.FRONTEND_PORT;
+  const frontendHost = process.env.FRONTEND_HOST;
+  const protocol = process.env.FRONTEND_PROTOCOL;
+  
+  // Use full ORIGIN if provided, otherwise construct from components
+  const origin = process.env.ORIGIN || `${protocol}://${frontendHost}:${frontendPort}`;
+  
   // Remove trailing slash if present
-  const origin = process.env.ORIGIN || 'http://localhost:5173';
   return origin.replace(/\/$/, '');
 };
 
@@ -31,8 +38,8 @@ app.use(cors({
 // Log the CORS and RP settings on startup
 console.log('======= WebAuthn Configuration =======');
 console.log(`Origin: ${getCleanOrigin()}`);
-console.log(`RP ID: ${process.env.RP_ID || 'localhost'}`);
-console.log(`RP Name: ${process.env.RP_NAME || 'FIDO2 Demo'}`);
+console.log(`RP ID: ${process.env.RP_ID}`);
+console.log(`RP Name: ${process.env.RP_NAME}`);
 console.log('====================================');
 
 // Helmet configuration
@@ -103,9 +110,9 @@ app.use((err, req, res, next) => {
 
 // Sync models and start server
 sequelize.sync().then(() => {
-  const PORT = process.env.PORT || 3001;
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  const BACKEND_PORT = process.env.BACKEND_PORT || process.env.PORT || 3001;
+  app.listen(BACKEND_PORT, () => {
+    console.log(`Server running on port ${BACKEND_PORT}`);
   });
 }).catch(err => {
   console.error('Database connection failed:', err);

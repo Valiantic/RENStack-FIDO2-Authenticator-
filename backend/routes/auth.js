@@ -31,8 +31,15 @@ const base64URLToBuffer = (base64URL) => {
 
 // Helper function to get and validate the origin
 const getOrigin = () => {
+  // Use FRONTEND_PORT from environment if available
+  const frontendPort = process.env.FRONTEND_PORT;
+  const frontendHost = process.env.FRONTEND_HOST;
+  const protocol = process.env.FRONTEND_PROTOCOL;
+  
+  // Use full ORIGIN if provided, otherwise construct from components
+  const origin = process.env.ORIGIN || `${protocol}://${frontendHost}:${frontendPort}`;
+  
   // Ensure the origin is properly formatted (no trailing slash)
-  const origin = process.env.ORIGIN || 'http://localhost:5173';
   return origin.replace(/\/$/, '');
 };
 
