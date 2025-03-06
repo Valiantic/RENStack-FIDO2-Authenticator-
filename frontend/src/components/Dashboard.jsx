@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { logoutUser } from '../services/authService';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -18,7 +18,7 @@ const Dashboard = () => {
 
   const handleLogout = async () => {
     try {
-      await axios.post('http://localhost:3001/auth/logout');
+      await logoutUser();
       logout(); // Clear user from context
       navigate('/login');
     } catch (error) {
