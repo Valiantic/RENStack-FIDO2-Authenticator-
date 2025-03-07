@@ -1,43 +1,39 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
+import { verifySession } from '../services/authService';
 
-// Create the context
+// Create context
 const AuthContext = createContext();
 
-// Provider component
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Check if user is already authenticated on mount
+  // Check for existing session on initial load
   useEffect(() => {
-    const checkAuthStatus = async () => {
+    async function checkExistingSession() {
       try {
-        const res = await axios.get('http://localhost:3001/auth/status', { 
-          withCredentials: true 
-        });
-        if (res.data.authenticated) {
-          setUser(res.data.user);
+        const response = await verifySession();
+        
+        if (response.authenticated && response.user) {
+          setUser(response.user);
         }
       } catch (error) {
-        console.error('Auth check failed:', error);
+        console.error('Error verifying session:', error);
       } finally {
         setLoading(false);
       }
-    };
-
-    checkAuthStatus();
+    }
+    
+    checkExistingSession();
   }, []);
 
   // Login function
   const login = (userData) => {
-    console.log('Setting user in context (login):', userData);
     setUser(userData);
   };
 
   // Register function
   const register = (userData) => {
-    console.log('Setting user in context (register):', userData);
     setUser(userData);
   };
 
@@ -49,20 +45,16 @@ export const AuthProvider = ({ children }) => {
   // Context value
   const value = {
     user,
+    loading,
     login,
     register,
-    logout,
-    loading
+    logout
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-// Custom hook to use the auth context
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
+// Custom hook for using auth context
+export const useAuth = () => useContext(AuthContext);
+
+export default AuthContext;

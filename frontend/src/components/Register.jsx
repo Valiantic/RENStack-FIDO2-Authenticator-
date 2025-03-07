@@ -28,7 +28,7 @@ const Register = () => {
         // Send credential to server
         const finalizeRes = await sendRegistrationResponse(credentialResponse);
 
-        console.log('Server response:', finalizeRes); // Log the full response for debugging
+        // console.log('Server response:', finalizeRes); // Log the full response for debugging
 
         if (finalizeRes.error) {
             throw new Error(finalizeRes.error);
@@ -37,15 +37,13 @@ const Register = () => {
         if (finalizeRes.status === 'ok') {
             setMessage('Registration successful!');
             
-            // Create user object if not directly provided in the response
+            // Use the user object directly from the response if available
             const userData = finalizeRes.user || {
                 username: username,
-                displayName: displayName,
-                // Add any other fields that might come from the server
-                id: finalizeRes.id || finalizeRes.userId || username
+                displayName: displayName
             };
             
-            console.log('User data being passed to context:', userData);
+            // console.log('User data being passed to context:', userData);
             
             // Pass user data to the context
             register(userData);
@@ -100,9 +98,10 @@ const Register = () => {
         
         <button 
           onClick={handleRegister}
-          className="w-full bg-blue-500 hover:bg-blue-600 !important text-white font-bold py-2 px-4 rounded-lg transition duration-200"
+          disabled={message.includes('Starting')}
+          className="w-full bg-blue-500 hover:bg-blue-600 !important text-white font-bold py-2 px-4 rounded-lg transition duration-200 disabled:opacity-50"
         >
-          Register with WebAuthn
+          {message.includes('Starting') ? 'Registering...' : 'Register with WebAuthn'}
         </button>
       </div>
       

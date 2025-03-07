@@ -14,7 +14,7 @@ const Dashboard = () => {
     }
   }, [user, loading, navigate]);
 
-  console.log('Current user in Dashboard:', user);
+  // console.log('Current user in Dashboard:', user);
 
   const handleLogout = async () => {
     try {

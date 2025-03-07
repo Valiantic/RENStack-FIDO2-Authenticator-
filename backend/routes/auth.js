@@ -189,13 +189,22 @@ router.post('/register/response', methodCheck, async (req, res) => {
       counter: attestationResult.authnrData.get('counter') || 0
     });
 
-    // Clear challenge from session
+
+    // SESSION SAVING
+
+    // Clear challenge from session but keep username and mark as authenticated
     req.session.challenge = null;
+    req.session.authenticated = true;  // Add this line to set authentication status
+    // Keep username in session for persistence
     await req.session.save();
 
     res.json({ 
       status: 'ok', 
-      message: 'Registration successful'
+      message: 'Registration successful',
+      user: {
+        username: user.username,
+        displayName: user.displayName
+      }
     });
 
   } catch (err) {
@@ -341,6 +350,44 @@ router.post('/login/response', methodCheck, async (req, res) => {
       error: 'Authentication verification failed',
       message: err.message,
       stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  }
+});
+
+// SESSION SAVING
+
+// Verify if user session is active
+router.get('/verify-session', async (req, res) => {
+  try {
+    // Check if session exists and is authenticated
+    if (req.session && req.session.authenticated && req.session.username) {
+      // Get user info from database
+      const user = await User.findOne({
+        where: { username: req.session.username }
+      });
+      
+      if (user) {
+        return res.json({
+          status: 'ok',
+          authenticated: true,
+          user: {
+            username: user.username,
+            displayName: user.displayName
+          }
+        });
+      }
+    }
+    
+    // If no valid session or user not found
+    res.json({
+      status: 'ok',
+      authenticated: false
+    });
+  } catch (err) {
+    console.error('Session verification error:', err);
+    res.status(500).json({
+      error: 'Session verification failed',
+      message: err.message
     });
   }
 });

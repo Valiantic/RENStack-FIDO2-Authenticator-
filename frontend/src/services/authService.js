@@ -54,6 +54,17 @@ export const logoutUser = async () => {
   }
 };
 
+// Verify if user session is still valid
+export const verifySession = async () => {
+  try {
+    const response = await api.get('/auth/verify-session');
+    return response.data;
+  } catch (error) {
+    console.error('Session verification failed:', error);
+    throw error;
+  }
+};
+
 // WebAuthn credential helpers
 export const createCredential = async (credentialOptions) => {
   // Convert challenge and user ID to ArrayBuffer
