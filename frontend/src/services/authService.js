@@ -65,18 +65,36 @@ export const verifySession = async () => {
   }
 };
 
+// Helper function to get the correct RP ID from environment variables or fallback to hostname
+const getRpId = () => {
+  // First check if RP_ID is defined in environment variables
+  const envRpId = import.meta.env.VITE_RP_ID;
+  
+  // If environment variable exists, use it
+  if (envRpId) {
+    return envRpId;
+  }
+  
+  // Otherwise fallback to hostname
+  const hostname = window.location.hostname;
+  return hostname === 'localhost' ? 'localhost' : hostname;
+};
+
 // WebAuthn credential helpers
 export const createCredential = async (credentialOptions) => {
   // Convert challenge and user ID to ArrayBuffer
   credentialOptions.challenge = base64URLToBuffer(credentialOptions.challenge);
   credentialOptions.user.id = base64URLToBuffer(credentialOptions.user.id);
   
+  // Get the RP ID from environment or hostname
+  const rpId = getRpId();
+  
   // Create credentials with explicit parameters
   const credential = await navigator.credentials.create({ 
     publicKey: {
       ...credentialOptions,
       rp: {
-        id: 'localhost',
+        id: rpId,
         name: 'FIDO2 Demo'
       }
     }
@@ -106,6 +124,12 @@ export const getCredential = async (assertionOptions) => {
       type: 'public-key'
     }));
   }
+
+  // Get the RP ID from environment or hostname
+  const rpId = getRpId();
+  
+  // Ensure rpId is set correctly
+  assertionOptions.rpId = rpId;
 
   // Get credential from authenticator
   const credential = await navigator.credentials.get({
