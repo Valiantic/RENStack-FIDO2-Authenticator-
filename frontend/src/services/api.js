@@ -1,6 +1,9 @@
 import axios from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+// USE THIS FOR LOCALHOST TESTING
+// const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+
+const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 // Configure axios defaults
 const api = axios.create({
