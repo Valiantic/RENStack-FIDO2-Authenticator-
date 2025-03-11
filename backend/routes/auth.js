@@ -2,7 +2,7 @@ const express = require('express');
 const { Fido2Lib } = require('fido2-lib');
 const router = express.Router();
 const User = require('../models/User');
-const Credential = require('../models/credential');
+const Credential = require('../models/Credential');
 const crypto = require('crypto');
 
 // Configure fido2-lib using environment variables where needed
@@ -124,16 +124,6 @@ router.post('/register', async (req, res) => {
       details: err.message 
     });
   }
-});
-
-// Add GET handler for registration response route
-router.get('/register/response', (req, res) => {
-  console.log('GET request received for /register/response');
-  res.status(405).json({ 
-    error: 'Method not allowed', 
-    message: 'This endpoint only accepts POST requests for WebAuthn attestation responses',
-    suggestion: 'If you\'re seeing this error in your application, ensure your frontend is sending a POST request'
-  });
 });
 
 //  Complete Registration: verify attestation response
