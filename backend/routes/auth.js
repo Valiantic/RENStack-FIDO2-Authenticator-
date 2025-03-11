@@ -114,6 +114,7 @@ router.post('/register', async (req, res) => {
     req.session.challenge = registrationOptions.challenge;
     req.session.username = username;
     req.session.displayName = displayName;
+    await req.session.save(); // Add this line
 
     console.log('Registration options generated:', registrationOptions);
     res.json(registrationOptions);

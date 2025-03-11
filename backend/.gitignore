@@ -1,3 +1,6 @@
 .env
 .env.production
 node_modules/
+
+backend/config/database.js  
+backend/models/Credential.js
