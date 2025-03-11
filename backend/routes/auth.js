@@ -117,6 +117,9 @@ router.post('/register', async (req, res) => {
     await req.session.save(); // Add this line
 
     console.log('Registration options generated:', registrationOptions);
+    console.log('Register - Session ID:', req.sessionID); // Add this line
+    console.log('Register - Origin:', getOrigin()); // Add this line
+    console.log('Register - RP ID:', getRpId()); // Add this line
     res.json(registrationOptions);
   } catch (err) {
     console.error('Error creating registration options:', err);
@@ -159,6 +162,10 @@ router.post('/register/response', methodCheck, async (req, res) => {
       origin: origin,
       rpId: rpId
     });
+
+    console.log('Register Response - Session ID:', req.sessionID); // Add this line
+    console.log('Register Response - Origin:', origin); // Add this line
+    console.log('Register Response - RP ID:', rpId); // Add this line
 
     const attestationResult = await fido2.attestationResult(
       attestationResponse,

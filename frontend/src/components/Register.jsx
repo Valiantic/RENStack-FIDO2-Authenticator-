@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getRegistrationOptions, sendRegistrationResponse, createCredential } from '../services/authService';
+import api from '../services/api'; // Import the api instance
 
 const Register = () => {
   const navigate = useNavigate();
@@ -21,6 +22,11 @@ const Register = () => {
         setMessage('Starting registration...');
         setIsRegistering(true);
         
+        // Check session before registration options
+        console.log('Checking session before registration...');
+        const sessionCheckBefore = await api.get('/session-check');
+        console.log('Session before registration:', sessionCheckBefore.data);
+
         // Get registration options from server
         const credentialOptions = await getRegistrationOptions(username, displayName);
         
@@ -33,6 +39,11 @@ const Register = () => {
         
         // Send credential to server
         const finalizeRes = await sendRegistrationResponse(credentialResponse);
+
+        // Check session after registration
+        console.log('Checking session after registration...');
+        const sessionCheckAfter = await api.get('/session-check');
+        console.log('Session after registration:', sessionCheckAfter.data);
 
         console.log('Server response:', finalizeRes); // Log the full response for debugging
 
