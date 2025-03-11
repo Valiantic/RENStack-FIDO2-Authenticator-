@@ -126,16 +126,6 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// Add GET handler for registration response route
-router.get('/register/response', (req, res) => {
-  console.log('GET request received for /register/response');
-  res.status(405).json({ 
-    error: 'Method not allowed', 
-    message: 'This endpoint only accepts POST requests for WebAuthn attestation responses',
-    suggestion: 'If you\'re seeing this error in your application, ensure your frontend is sending a POST request'
-  });
-});
-
 // New endpoint to store the challenge in the session
 router.post('/store-challenge', (req, res) => {
   try {
