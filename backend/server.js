@@ -31,9 +31,15 @@ app.use(cors({
     origin: getCleanOrigin(), // Use clean origin value
     credentials: true,
     methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Accept'],
+    allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
     maxAge: 600 // Reduce preflight requests
 }));
+
+// Add explicit OPTIONS handling for all routes
+app.options('*', (req, res) => {
+  console.log('OPTIONS request received for:', req.path);
+  res.status(200).end();
+});
 
 // Log the CORS and RP settings on startup
 console.log('======= WebAuthn Configuration =======');
