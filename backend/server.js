@@ -26,24 +26,34 @@ const getCleanOrigin = () => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Get origins for CORS configuration
+const allowedOrigins = [
+  getCleanOrigin(),
+  'https://renstack-fido2-authenticator.onrender.com',
+  process.env.ADDITIONAL_ORIGIN,
+].filter(Boolean); // Filter out any undefined/null/empty values
+
 // Configure CORS before other middleware
 app.use(cors({
-    origin: getCleanOrigin(), // Use clean origin value
+    origin: function(origin, callback) {
+      // Allow requests with no origin (like mobile apps, curl, etc)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.log('Blocked by CORS:', origin);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Accept', 'X-Session-ID'],
+    exposedHeaders: ['Set-Cookie'],
     maxAge: 600 // Reduce preflight requests
 }));
 
-// Add explicit OPTIONS handling for all routes
-app.options('*', (req, res) => {
-  console.log('OPTIONS request received for:', req.path);
-  res.status(200).end();
-});
-
 // Log the CORS and RP settings on startup
 console.log('======= WebAuthn Configuration =======');
-console.log(`Origin: ${getCleanOrigin()}`);
+console.log(`Origins: ${allowedOrigins.join(', ')}`);
 console.log(`RP ID: ${process.env.RP_ID}`);
 console.log(`RP Name: ${process.env.RP_NAME}`);
 console.log('====================================');
@@ -56,45 +66,53 @@ app.use(helmet({
 
 // Session configuration
 app.use(session({
-    secret: process.env.SESSION_SECRET,
+    secret: process.env.SESSION_SECRET || 'fallback-secret-for-development-only',
     resave: false,
     saveUninitialized: true,
     name: 'fido2session',
     cookie: {
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         maxAge: 24 * 60 * 60 * 1000,
         httpOnly: true,
         path: '/'
     }
 }));
 
+// Session tracking middleware
+app.use((req, res, next) => {
+    // Generate a session ID for tracking if needed
+    if (!req.session.initialized) {
+        req.session.initialized = true;
+        req.session.createdAt = new Date().toISOString();
+        console.log(`Initialized new session: ${req.sessionID}`);
+    }
+    
+    // Track custom session ID from header if present
+    const customSessionId = req.headers['x-session-id'];
+    if (customSessionId) {
+        req.session.customSessionId = customSessionId;
+        console.log(`Using custom session ID: ${customSessionId}`);
+    }
+    
+    next();
+});
+
 // Enhanced logging middleware
 app.use((req, res, next) => {
     console.log(`\n[${new Date().toISOString()}] ${req.method} ${req.url}`);
     console.log('Headers:', JSON.stringify(req.headers, null, 2));
     if (req.body) {
-        console.log('Body:', JSON.stringify(req.body, null, 2));
+        const sanitizedBody = { ...req.body };
+        if (sanitizedBody.password) sanitizedBody.password = '[FILTERED]';
+        console.log('Body:', JSON.stringify(sanitizedBody, null, 2));
     }
-    console.log('Session:', req.session);
-    next();
-});
-
-// Add request logging
-app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
+    console.log('Session ID:', req.sessionID);
     next();
 });
 
 // Add OPTIONS handling
 app.options('*', cors());
-
-// Add session debug middleware
-app.use((req, res, next) => {
-    console.log('Session ID:', req.sessionID);
-    console.log('Session Data:', req.session);
-    next();
-});
 
 // Mount routes
 app.use('/auth', authRoutes);
@@ -102,6 +120,14 @@ app.use('/auth', authRoutes);
 // Basic test route
 app.get('/', (req, res) => {
     res.send('FIDO2 Authenticator Server is running.');
+});
+
+// Session test route
+app.get('/session-check', (req, res) => {
+    res.json({ 
+        sessionId: req.sessionID, 
+        session: req.session 
+    });
 });
 
 // Updated error handling middleware

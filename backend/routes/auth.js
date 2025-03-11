@@ -267,16 +267,6 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Add GET handler for login response route
-router.get('/login/response', (req, res) => {
-  console.log('GET request received for /login/response');
-  res.status(405).json({ 
-    error: 'Method not allowed', 
-    message: 'This endpoint only accepts POST requests for WebAuthn assertion responses',
-    suggestion: 'If you\'re seeing this error in your application, ensure your frontend is sending a POST request'
-  });
-});
-
 //  Complete Login: verify assertion response
 router.post('/login/response', methodCheck, async (req, res) => {
   try {

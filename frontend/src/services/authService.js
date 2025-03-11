@@ -5,6 +5,12 @@ import { arrayBufferToBase64URL, base64URLToBuffer } from '../utils/bufferUtils'
 export const getRegistrationOptions = async (username, displayName) => {
   try {
     const response = await api.post('/auth/register', { username, displayName });
+    
+    // Store session identifier if provided by server
+    if (response.data.sessionId) {
+      localStorage.setItem('auth_session_id', response.data.sessionId);
+    }
+    
     return response.data;
   } catch (error) {
     console.error('Registration options request failed:', error);
@@ -14,7 +20,20 @@ export const getRegistrationOptions = async (username, displayName) => {
 
 export const sendRegistrationResponse = async (credentialResponse) => {
   try {
-    const response = await api.post('/auth/register/response', credentialResponse);
+    // Get session identifier if available
+    const sessionId = localStorage.getItem('auth_session_id');
+    
+    // Include session identifier in request if available
+    const payload = {
+      ...credentialResponse,
+      sessionId
+    };
+    
+    const response = await api.post('/auth/register/response', payload);
+    
+    // Clean up session identifier after use
+    localStorage.removeItem('auth_session_id');
+    
     return response.data;
   } catch (error) {
     console.error('Registration response submission failed:', error);
@@ -26,6 +45,12 @@ export const sendRegistrationResponse = async (credentialResponse) => {
 export const getLoginOptions = async (username) => {
   try {
     const response = await api.post('/auth/login', { username });
+    
+    // Store session identifier if provided by server
+    if (response.data.sessionId) {
+      localStorage.setItem('auth_session_id', response.data.sessionId);
+    }
+    
     return response.data;
   } catch (error) {
     console.error('Login options request failed:', error);
@@ -82,34 +107,45 @@ const getRpId = () => {
 
 // WebAuthn credential helpers
 export const createCredential = async (credentialOptions) => {
-  // Convert challenge and user ID to ArrayBuffer
-  credentialOptions.challenge = base64URLToBuffer(credentialOptions.challenge);
-  credentialOptions.user.id = base64URLToBuffer(credentialOptions.user.id);
-  
-  // Get the RP ID from environment or hostname
-  const rpId = getRpId();
-  
-  // Create credentials with explicit parameters
-  const credential = await navigator.credentials.create({ 
-    publicKey: {
+  try {
+    // Convert challenge and user ID to ArrayBuffer
+    credentialOptions.challenge = base64URLToBuffer(credentialOptions.challenge);
+    credentialOptions.user.id = base64URLToBuffer(credentialOptions.user.id);
+    
+    // Get the RP ID from environment or hostname
+    const rpId = getRpId();
+    
+    console.log('Creating credential with options:', JSON.stringify({
       ...credentialOptions,
-      rp: {
-        id: rpId,
-        name: 'FIDO2 Demo'
+      challenge: 'ArrayBuffer (converted)',
+      user: { ...credentialOptions.user, id: 'ArrayBuffer (converted)' }
+    }, null, 2));
+    
+    // Create credentials with explicit parameters
+    const credential = await navigator.credentials.create({ 
+      publicKey: {
+        ...credentialOptions,
+        rp: {
+          id: rpId,
+          name: 'FIDO2 Demo'
+        }
       }
-    }
-  });
-  
-  // Format credential for transmission
-  return {
-    id: arrayBufferToBase64URL(credential.rawId),
-    rawId: arrayBufferToBase64URL(credential.rawId),
-    type: credential.type,
-    response: {
-      clientDataJSON: arrayBufferToBase64URL(credential.response.clientDataJSON),
-      attestationObject: arrayBufferToBase64URL(credential.response.attestationObject)
-    }
-  };
+    });
+    
+    // Format credential for transmission
+    return {
+      id: arrayBufferToBase64URL(credential.rawId),
+      rawId: arrayBufferToBase64URL(credential.rawId),
+      type: credential.type,
+      response: {
+        clientDataJSON: arrayBufferToBase64URL(credential.response.clientDataJSON),
+        attestationObject: arrayBufferToBase64URL(credential.response.attestationObject)
+      }
+    };
+  } catch (error) {
+    console.error('Create credential error:', error);
+    throw error;
+  }
 };
 
 export const getCredential = async (assertionOptions) => {
