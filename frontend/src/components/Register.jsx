@@ -9,6 +9,7 @@ const Register = () => {
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [message, setMessage] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
 
   async function handleRegister() {
     try {
@@ -18,17 +19,22 @@ const Register = () => {
         }
 
         setMessage('Starting registration...');
+        setIsRegistering(true);
         
         // Get registration options from server
         const credentialOptions = await getRegistrationOptions(username, displayName);
         
+        setMessage('Please follow the instructions on your authenticator...');
+        
         // Create credentials 
         const credentialResponse = await createCredential(credentialOptions);
 
+        setMessage('Sending registration data to server...');
+        
         // Send credential to server
         const finalizeRes = await sendRegistrationResponse(credentialResponse);
 
-        // console.log('Server response:', finalizeRes); // Log the full response for debugging
+        console.log('Server response:', finalizeRes); // Log the full response for debugging
 
         if (finalizeRes.error) {
             throw new Error(finalizeRes.error);
@@ -42,8 +48,6 @@ const Register = () => {
                 username: username,
                 displayName: displayName
             };
-            
-            // console.log('User data being passed to context:', userData);
             
             // Pass user data to the context
             register(userData);
@@ -72,6 +76,8 @@ const Register = () => {
         }
 
         setMessage(errorMessage);
+    } finally {
+        setIsRegistering(false);
     }
   }
 
@@ -86,6 +92,7 @@ const Register = () => {
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+          disabled={isRegistering}
         />
         
         <input 
@@ -94,14 +101,15 @@ const Register = () => {
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
           className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+          disabled={isRegistering}
         />
         
         <button 
           onClick={handleRegister}
-          disabled={message.includes('Starting')}
+          disabled={isRegistering}
           className="w-full bg-blue-500 hover:bg-blue-600 !important text-white font-bold py-2 px-4 rounded-lg transition duration-200 disabled:opacity-50"
         >
-          {message.includes('Starting') ? 'Registering...' : 'Register with WebAuthn'}
+          {isRegistering ? 'Registering...' : 'Register with WebAuthn'}
         </button>
       </div>
       
