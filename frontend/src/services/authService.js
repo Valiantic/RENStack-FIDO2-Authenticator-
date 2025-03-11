@@ -20,20 +20,7 @@ export const getRegistrationOptions = async (username, displayName) => {
 
 export const sendRegistrationResponse = async (credentialResponse) => {
   try {
-    // Get session identifier if available
-    const sessionId = localStorage.getItem('auth_session_id');
-    
-    // Include session identifier in request if available
-    const payload = {
-      ...credentialResponse,
-      sessionId
-    };
-    
-    const response = await api.post('/auth/register/response', payload);
-    
-    // Clean up session identifier after use
-    localStorage.removeItem('auth_session_id');
-    
+    const response = await api.post('/auth/register/response', credentialResponse);
     return response.data;
   } catch (error) {
     console.error('Registration response submission failed:', error);
