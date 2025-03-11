@@ -30,6 +30,11 @@ const Register = () => {
         // Get registration options from server
         const credentialOptions = await getRegistrationOptions(username, displayName);
         
+        // Store the challenge in the session
+        console.log('Storing challenge in session...');
+        await api.post('/auth/store-challenge', { challenge: credentialOptions.challenge });
+        console.log('Challenge stored in session successfully.');
+        
         setMessage('Please follow the instructions on your authenticator...');
         
         // Create credentials 

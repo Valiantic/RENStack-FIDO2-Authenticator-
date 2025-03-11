@@ -130,6 +130,29 @@ router.post('/register', async (req, res) => {
   }
 });
 
+// New endpoint to store the challenge in the session
+router.post('/store-challenge', (req, res) => {
+  try {
+    const { challenge } = req.body;
+    if (!challenge) {
+      return res.status(400).json({ error: 'Missing challenge' });
+    }
+
+    req.session.challenge = challenge;
+    req.session.save((err) => {
+      if (err) {
+        console.error('Error saving challenge to session:', err);
+        return res.status(500).json({ error: 'Failed to save challenge to session' });
+      }
+      console.log('Challenge stored in session:', challenge);
+      res.json({ status: 'ok', message: 'Challenge stored successfully' });
+    });
+  } catch (err) {
+    console.error('Error storing challenge:', err);
+    res.status(500).json({ error: 'Failed to store challenge', message: err.message });
+  }
+});
+
 //  Complete Registration: verify attestation response
 router.post('/register/response', methodCheck, async (req, res) => {
   try {
