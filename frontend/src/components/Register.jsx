@@ -35,6 +35,10 @@ const Register = () => {
         await api.post('/auth/store-challenge', { challenge: credentialOptions.challenge });
         console.log('Challenge stored in session successfully.');
         
+        // Log session after storing challenge
+        const sessionCheckAfterStoreChallenge = await api.get('/session-check');
+        console.log('Session after storing challenge:', sessionCheckAfterStoreChallenge.data);
+        
         setMessage('Please follow the instructions on your authenticator...');
         
         // Create credentials 
