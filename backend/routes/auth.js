@@ -2,7 +2,7 @@ const express = require('express');
 const { Fido2Lib } = require('fido2-lib');
 const router = express.Router();
 const User = require('../models/User');
-const Credential = require('../models/credential');
+const Credential = require('../models/Credential');
 const crypto = require('crypto');
 
 // Configure fido2-lib using environment variables where needed
