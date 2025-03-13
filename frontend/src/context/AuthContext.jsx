@@ -1,60 +1,92 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect } from 'react';
 import { verifySession } from '../services/authService';
 
-// Create context
-const AuthContext = createContext();
+const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authChecked, setAuthChecked] = useState(false);
 
-  // Check for existing session on initial load
+  // Check for existing session on load
   useEffect(() => {
-    async function checkExistingSession() {
+    const checkAuth = async () => {
       try {
-        const response = await verifySession();
+        console.log('Checking authentication status...');
+        const result = await verifySession();
         
-        if (response.authenticated && response.user) {
-          setUser(response.user);
+        console.log('Auth check result:', result);
+        
+        if (result.authenticated && result.user) {
+          console.log('User is authenticated:', result.user);
+          setCurrentUser(result.user);
+        } else {
+          console.log('User is not authenticated');
+          setCurrentUser(null);
         }
       } catch (error) {
-        console.error('Error verifying session:', error);
+        console.error('Auth check error:', error);
+        setCurrentUser(null);
       } finally {
         setLoading(false);
+        setAuthChecked(true);
       }
-    }
-    
-    checkExistingSession();
+    };
+
+    checkAuth();
   }, []);
 
-  // Login function
+  // Login function called after successful authentication
   const login = (userData) => {
-    setUser(userData);
+    console.log('Setting authenticated user:', userData);
+    setCurrentUser(userData);
+    
+    // Store user data in sessionStorage as backup
+    try {
+      sessionStorage.setItem('authenticatedUser', JSON.stringify(userData));
+    } catch (e) {
+      console.warn('Failed to store auth data in sessionStorage:', e);
+    }
   };
 
-  // Register function
+  // For registration
   const register = (userData) => {
-    setUser(userData);
+    login(userData); // Use the same logic as login
   };
 
-  // Logout function
-  const logout = () => {
-    setUser(null);
+  // For logout
+  const logout = async () => {
+    try {
+      // Clear session storage
+      sessionStorage.removeItem('authenticatedUser');
+      
+      // Clear server session
+      await logoutUser(); // Import this from authService
+      
+      // Update state
+      setCurrentUser(null);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
-  // Context value
   const value = {
-    user,
+    currentUser,
+    authChecked,
     loading,
     login,
     register,
-    logout
+    logout,
+    isAuthenticated: !!currentUser
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-// Custom hook for using auth context
-export const useAuth = () => useContext(AuthContext);
-
-export default AuthContext;
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === null) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};

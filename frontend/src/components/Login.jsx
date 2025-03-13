@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { getLoginOptions, sendLoginResponse, getCredential, loginDirect } from '../services/authService';
+import { getLoginOptions, sendLoginResponse, getCredential, loginDirect, checkUserCredentials } from '../services/authService';
+import api from '../services/api';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -62,31 +63,28 @@ const Login = () => {
     setIsLoggingIn(true);
     
     try {
-      // First check if the user has credentials using our diagnostic endpoint
-      try {
-        const checkResponse = await api.get(`/auth/debug/user-credentials/${encodeURIComponent(username)}`);
-        
-        if (checkResponse.data.status === 'ok') {
-          if (checkResponse.data.credentialCount === 0) {
-            setMessage(`No passkeys found for user "${username}". Please register again.`);
-            setIsLoggingIn(false);
-            return;
-          }
-          
-          // Continue with WebAuthn authentication since user & credentials exist
-          console.log(`User has ${checkResponse.data.credentialCount} passkeys registered`);
-        } else {
-          setMessage(`User "${username}" not found. Please register first.`);
+      // Use the imported service function instead of direct API call
+      const checkResult = await checkUserCredentials(username);
+      
+      if (checkResult.status === 'ok') {
+        if (checkResult.credentialCount === 0) {
+          setMessage(`No passkeys found for user "${username}". Please register again.`);
           setIsLoggingIn(false);
           return;
         }
-      } catch (checkError) {
-        console.warn('Credential check failed, continuing with login attempt:', checkError);
+        
+        // Continue with WebAuthn authentication since user & credentials exist
+        console.log(`User has ${checkResult.credentialCount} passkeys registered`);
+      } else {
+        setMessage(`User "${username}" not found. Please register first.`);
+        setIsLoggingIn(false);
+        return;
       }
-      
+
       // Proceed with WebAuthn authentication
       await handleWebAuthnAuthentication(username);
     } catch (error) {
+      // ...existing error handling...
       setMessage(`Login failed: ${error.message}`);
       setIsLoggingIn(false);
     }

@@ -514,15 +514,31 @@ router.post('/login/response', methodCheck, async (req, res) => {
     // Update counter
     await credential.update({ counter: result.authnrData.get('counter') });
 
-    // Clear session challenge and set authenticated
+    // Clear session challenge and ensure authenticated is set
     req.session.challenge = null;
-    req.session.authenticated = true;  // Add this line
-    await req.session.save();
+    req.session.authenticated = true; 
+    req.session.userId = user.id; // Add user ID to session
+    req.session.username = username; // Ensure username is in session
+    
+    // Force session save and wait for it to complete
+    await new Promise((resolve, reject) => {
+      req.session.save(err => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+
+    console.log('Session after authentication:', {
+      id: req.sessionID,
+      authenticated: req.session.authenticated,
+      username: req.session.username
+    });
 
     res.json({ 
       status: 'ok', 
       message: 'Authentication successful',
       user: {
+        id: user.id,
         username: user.username,
         displayName: user.displayName
       }

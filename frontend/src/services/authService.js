@@ -140,7 +140,15 @@ export const sendLoginResponse = async (assertionResponse) => {
     
     try {
       // Normal login flow
+      console.log('Sending login response to server...');
       const response = await api.post('/auth/login/response', payload);
+      console.log('Login successful! Server response:', response.data);
+      
+      // Explicitly store auth status in sessionStorage as backup
+      if (response.data.user) {
+        sessionStorage.setItem('authenticatedUser', JSON.stringify(response.data.user));
+      }
+      
       return response.data;
     } catch (loginError) {
       console.warn('Standard login failed, trying with error bypass:', loginError.message);
