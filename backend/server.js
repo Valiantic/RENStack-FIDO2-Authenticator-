@@ -117,6 +117,20 @@ app.options('*', cors());
 // Add explicit verification for route mounting
 console.log('=== Mounting Routes ===');
 
+// Add debug middleware specifically for registration endpoints
+app.use('/auth/register*', (req, res, next) => {
+  console.log('\n==== REGISTRATION REQUEST DETAILS ====');
+  console.log(`Path: ${req.path}`);
+  console.log('Method:', req.method);
+  console.log('Headers:', JSON.stringify(req.headers, null, 2));
+  console.log('Body:', JSON.stringify(req.body, null, 2));
+  console.log('Session ID:', req.sessionID);
+  console.log('Has session?', !!req.session);
+  console.log('Has challenge?', !!req.session?.challenge);
+  console.log('=============================');
+  next();
+});
+
 // Mount routes
 app.use('/auth', authRoutes);
 console.log('Auth routes mounted at /auth');

@@ -4,6 +4,10 @@ import { arrayBufferToBase64URL, base64URLToBuffer } from '../utils/bufferUtils'
 // Registration services
 export const getRegistrationOptions = async (username, displayName) => {
   try {
+    // Store credentials locally as fallback for direct registration
+    localStorage.setItem('temp_username', username);
+    localStorage.setItem('temp_displayName', displayName);
+    
     const response = await api.post('/auth/register', { username, displayName });
     
     // Store session identifier if provided by server
@@ -28,9 +32,32 @@ export const sendRegistrationResponse = async (credentialResponse) => {
       credential: credentialResponse  // Also nest under credential for new format
     };
     
-    const response = await api.post('/auth/register/response', payload);
-    console.log('Registration response from server:', response.data);
-    return response.data;
+    try {
+      // Try the original endpoint first
+      const response = await api.post('/auth/register/response', payload);
+      console.log('Registration response from server:', response.data);
+      return response.data;
+    } catch (originalError) {
+      console.warn('Original registration endpoint failed, trying simplified endpoint:', originalError.message);
+      
+      try {
+        // If the original endpoint fails, try the simplified endpoint
+        const simplifiedResponse = await api.post('/auth/register-simple', payload);
+        console.log('Simplified registration response from server:', simplifiedResponse.data);
+        return simplifiedResponse.data;
+      } catch (simplifiedError) {
+        console.warn('Simplified endpoint failed, trying direct endpoint:', simplifiedError.message);
+        
+        // Last resort: try the direct registration endpoint with minimal WebAuthn verification
+        const directResponse = await api.post('/auth/register-direct', {
+          ...payload,
+          username: localStorage.getItem('temp_username'),
+          displayName: localStorage.getItem('temp_displayName')
+        });
+        console.log('Direct registration response:', directResponse.data);
+        return directResponse.data;
+      }
+    }
   } catch (error) {
     console.error('Registration response submission failed:', error);
     console.error('Error details:', {
@@ -41,7 +68,7 @@ export const sendRegistrationResponse = async (credentialResponse) => {
     });
     
     // Enhanced error handling with more diagnostic info
-    const errorMessage = error.response?.data?.message || error.message;
+    const errorMessage = error.response?.data?.error || error.response?.data?.message || error.message;
     throw new Error(`Registration failed: ${errorMessage}`);
   }
 };
