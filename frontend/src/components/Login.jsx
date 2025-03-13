@@ -9,15 +9,12 @@ const Login = () => {
   const [username, setUsername] = useState('');
   const [message, setMessage] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [verifiedUsername, setVerifiedUsername] = useState(null);
 
-  async function handleLogin() {
+  // Regular WebAuthn login - used as second step after direct verification
+  async function handleWebAuthnAuthentication(username) {
     try {
-      if (!username) {
-        setMessage('Please enter your username');
-        return;
-      }
-
-      setMessage('Starting authentication...');
+      setMessage('Starting WebAuthn authentication...');
 
       // Get assertion options from server
       const assertionOptions = await getLoginOptions(username);
@@ -36,31 +33,40 @@ const Login = () => {
         throw new Error(verificationRes.message || 'Login failed');
       }
     } catch (error) {
-      console.error('Login error:', error);
-      setMessage(`Login failed: ${error.message}`);
+      console.error('WebAuthn authentication error:', error);
+      setMessage(`Authentication failed: ${error.message}`);
+      setIsLoggingIn(false);
     }
   }
 
+  // Direct login now just verifies user exists and has credentials,
+  // then triggers the WebAuthn authentication
   async function handleDirectLogin(username) {
     if (!username) {
       setMessage('Please enter your username first');
       return;
     }
   
-    setMessage('Attempting simplified login...');
+    setMessage('Verifying user account...');
     setIsLoggingIn(true);
     
     try {
+      // First stage: Just verify the user exists
       const response = await loginDirect(username);
-      if (response.status === 'ok') {
-        login(response.user);
-        navigate('/dashboard');
+      
+      if (response.status === 'ok' && response.userExists) {
+        // Store the verified username for the next step
+        setVerifiedUsername(username);
+        setMessage('User verified. Please authenticate with your security key or biometrics...');
+        
+        // Move to second stage: Require WebAuthn authentication
+        await handleWebAuthnAuthentication(username);
       } else {
-        setMessage('Login failed: ' + (response.message || 'Unknown error'));
+        setMessage('Account verification failed: ' + (response.message || 'User not found'));
+        setIsLoggingIn(false);
       }
     } catch (error) {
-      setMessage('Login failed: ' + (error.message || 'Unknown error'));
-    } finally {
+      setMessage('Account verification failed: ' + (error.message || 'Unknown error'));
       setIsLoggingIn(false);
     }
   }
@@ -75,14 +81,16 @@ const Login = () => {
           placeholder="Username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
+          disabled={isLoggingIn}
           className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
         />
         
         <button 
-         onClick={() => handleDirectLogin(username)}
-          className="w-full bg-blue-500 hover:bg-blue-600 !important text-white font-bold py-2 px-4 rounded-lg transition duration-200"
+          onClick={() => handleDirectLogin(username)}
+          disabled={isLoggingIn}
+          className="w-full bg-blue-500 hover:bg-blue-600 !important text-white font-bold py-2 px-4 rounded-lg transition duration-200 disabled:opacity-50"
         >
-          Login with WebAuthn
+          {isLoggingIn ? 'Authenticating...' : 'Login with WebAuthn'}
         </button>
       </div>
       

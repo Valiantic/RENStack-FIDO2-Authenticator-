@@ -178,15 +178,15 @@ export const sendLoginResponse = async (assertionResponse) => {
   }
 };
 
-// Add a direct login function that bypasses credential verification
+// Modified direct login function to just verify user existence
 export const loginDirect = async (username) => {
   try {
-    console.log('Attempting direct login for:', username);
+    console.log('Verifying account for:', username);
     const response = await api.post('/auth/login-direct', { username });
-    console.log('Direct login response:', response.data);
+    console.log('User verification response:', response.data);
     return response.data;
   } catch (error) {
-    console.error('Direct login failed:', error);
+    console.error('User verification failed:', error);
     throw error;
   }
 };
