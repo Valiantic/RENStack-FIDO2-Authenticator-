@@ -1,73 +1,101 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { logoutUser } from '../services/authService';
+import { verifySession, logoutUser } from '../services/authService';
 
 const Dashboard = () => {
+  const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
-  const { user, logout, loading } = useAuth();
-
-  // Redirect if not authenticated
+  const [sessionInfo, setSessionInfo] = useState(null);
+  const [loading, setLoading] = useState(true);
+  
+  // Verify session when component mounts
   useEffect(() => {
-    if (!loading && !user) {
-      navigate('/login');
-    }
-  }, [user, loading, navigate]);
-
-  // console.log('Current user in Dashboard:', user);
-
+    const checkSessionOnLoad = async () => {
+      try {
+        setLoading(true);
+        console.log('Dashboard: Verifying session...');
+        const result = await verifySession();
+        
+        if (result.authenticated) {
+          console.log('Dashboard: Session is valid');
+          setSessionInfo(result);
+        } else {
+          console.warn('Dashboard: Session is invalid, redirecting to login');
+          logout();
+          navigate('/login');
+        }
+      } catch (error) {
+        console.error('Dashboard: Session verification error:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    checkSessionOnLoad();
+  }, [navigate, logout]);
+  
   const handleLogout = async () => {
     try {
       await logoutUser();
-      logout(); // Clear user from context
+      logout(); // update local auth state
       navigate('/login');
     } catch (error) {
-      console.error('Logout failed:', error);
+      console.error('Logout error:', error);
     }
   };
-
-  // Show loading state while checking authentication
+  
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-xl font-semibold">Loading dashboard...</div>
       </div>
     );
   }
-
-  // Show not authenticated message if no user
-  if (!user) {
+  
+  if (!currentUser) {
     return (
-      <div className="text-center p-4 bg-yellow-100 text-yellow-800 rounded-lg shadow">
-        Not authenticated. Redirecting to login...
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-xl font-semibold">Session expired. Redirecting...</div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-md mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 m-4">
-      <h1 className="text-3xl text-center font-bold text-gray-900 dark:text-white mb-4">
-        Welcome, {user?.displayName || user?.username || 'User'}!
-      </h1>
-      <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4 mb-6">
-        <p className="text-lg mb-4 text-gray-700 dark:text-gray-300">
-          You are now authenticated and logged in.
-        </p>
-        <div className="space-y-2">
-          <p className="font-medium text-gray-600 dark:text-gray-400">
-            <span className="font-semibold text-gray-900 dark:text-white">Username:</span> {user?.username || 'Not available'}
-          </p>
-          <p className="font-medium text-gray-600 dark:text-gray-400">
-            <span className="font-semibold text-gray-900 dark:text-white">Display Name:</span> {user?.displayName || 'Not available'}
+    <div className="p-8 max-w-4xl mx-auto">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Dashboard</h1>
+        
+        <div className="bg-blue-50 dark:bg-blue-900 p-4 rounded-lg mb-6">
+          <h2 className="text-lg font-semibold text-blue-700 dark:text-blue-300">Welcome, {currentUser.displayName || currentUser.username}!</h2>
+          <p className="text-blue-600 dark:text-blue-400 mt-1">
+            You are logged in with WebAuthn passkeys.
           </p>
         </div>
+        
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold mb-2">Your Account</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded">
+              <span className="text-gray-500 dark:text-gray-400">Username:</span> 
+              <span className="ml-2 font-medium">{currentUser.username}</span>
+            </div>
+            {currentUser.displayName && (
+              <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded">
+                <span className="text-gray-500 dark:text-gray-400">Display Name:</span>
+                <span className="ml-2 font-medium">{currentUser.displayName}</span>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        <button 
+          onClick={handleLogout}
+          className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded"
+        >
+          Logout
+        </button>
       </div>
-      <button 
-        onClick={handleLogout}
-        className="w-full bg-blue-500 hover:bg-blue-600 !important text-white font-bold py-2 px-4 rounded-lg transition duration-200"
-      >
-        Logout
-      </button>
     </div>
   );
 };

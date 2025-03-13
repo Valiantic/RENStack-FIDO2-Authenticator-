@@ -573,9 +573,18 @@ router.post('/login/response', methodCheck, async (req, res) => {
 
 // SESSION SAVING
 
-// Verify if user session is active
+// Improved session verification endpoint
 router.get('/verify-session', async (req, res) => {
   try {
+    console.log('[DEBUG] Verify session request received');
+    console.log('[DEBUG] Session data:', {
+      id: req.sessionID,
+      authenticated: req.session?.authenticated,
+      username: req.session?.username,
+      userId: req.session?.userId,
+      hasSession: !!req.session
+    });
+    
     // Check if session exists and is authenticated
     if (req.session && req.session.authenticated && req.session.username) {
       // Get user info from database
@@ -584,24 +593,50 @@ router.get('/verify-session', async (req, res) => {
       });
       
       if (user) {
+        console.log(`[DEBUG] User ${user.username} is authenticated`);
+        
+        // Force session resave to extend expiration
+        req.session.lastVerified = new Date().toISOString();
+        await new Promise((resolve, reject) => {
+          req.session.save(err => {
+            if (err) {
+              console.error('[ERROR] Failed to save session:', err);
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+        
         return res.json({
           status: 'ok',
           authenticated: true,
           user: {
+            id: user.id,
             username: user.username,
             displayName: user.displayName
+          },
+          session: {
+            id: req.sessionID,
+            lastVerified: req.session.lastVerified
           }
         });
+      } else {
+        console.log(`[DEBUG] User from session (${req.session.username}) not found in database`);
       }
+    } else {
+      console.log('[DEBUG] No valid session found');
     }
     
     // If no valid session or user not found
     res.json({
       status: 'ok',
-      authenticated: false
+      authenticated: false,
+      message: 'Session not authenticated or user not found',
+      sessionExists: !!req.session
     });
   } catch (err) {
-    console.error('Session verification error:', err);
+    console.error('[ERROR] Session verification error:', err);
     res.status(500).json({
       error: 'Session verification failed',
       message: err.message

@@ -39,34 +39,45 @@ const PublicRoute = ({ children }) => {
   return children;
 };
 
+function AppContent() {
+  const { loading } = useAuth();
+  
+  if (loading) {
+    return <div className="flex h-screen items-center justify-center">
+      <div className="text-xl text-blue-600 font-semibold">Loading...</div>
+    </div>;
+  }
+  
+  return (
+    <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+      {/* SessionPersistence component removed - functionality now in AuthContext */}
+      <Routes>
+        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/login" element={
+          <PublicRoute>
+            <Login />
+          </PublicRoute>
+        } />
+        <Route path="/register" element={
+          <PublicRoute>
+            <Register />
+          </PublicRoute>
+        } />
+        <Route path="/dashboard" element={
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </div>
+  );
+}
+
 function App() {
   return (
     <AuthProvider>
-      <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-        <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
-          
-          <Route path="/login" element={
-            <PublicRoute>
-              <Login />
-            </PublicRoute>
-          } />
-          
-          <Route path="/register" element={
-            <PublicRoute>
-              <Register />
-            </PublicRoute>
-          } />
-          
-          <Route path="/dashboard" element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          } />
-          
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </div>
+      <AppContent />
     </AuthProvider>
   );
 }
