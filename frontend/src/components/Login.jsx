@@ -10,7 +10,6 @@ const Login = () => {
   const [username, setUsername] = useState('');
   const [message, setMessage] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [verifiedUsername, setVerifiedUsername] = useState(null);
 
   // Regular WebAuthn login - used as second step after direct verification
   async function handleWebAuthnAuthentication(username) {
@@ -29,13 +28,21 @@ const Login = () => {
         
         if (verificationRes.status === 'ok') {
           setMessage('Login successful!');
-          login(verificationRes.user); // Use context login function
-          navigate('/dashboard');
+          console.log('Login successful, user data:', verificationRes.user);
+          
+          // Save authentication info
+          login(verificationRes.user);
+          
+          // Clear local form state
+          setUsername('');
+          setTimeout(() => {
+            navigate('/dashboard');
+          }, 500); // Short delay to allow state updates
         } else {
           throw new Error(verificationRes.message || 'Login failed');
         }
       } catch (error) {
-        // Check for specific error types
+        // Error handling for specific cases
         if (error.message?.includes('User not found')) {
           throw new Error(`User "${username}" not found. Please register first.`);
         } else if (error.message?.includes('No credentials registered')) {
@@ -51,8 +58,7 @@ const Login = () => {
     }
   }
 
-  // Direct login now just verifies user exists and has credentials,
-  // then triggers the WebAuthn authentication
+  // Direct login that handles both verification and authentication
   async function handleDirectLogin(username) {
     if (!username) {
       setMessage('Please enter your username first');
@@ -63,28 +69,34 @@ const Login = () => {
     setIsLoggingIn(true);
     
     try {
-      // Use the imported service function instead of direct API call
-      const checkResult = await checkUserCredentials(username);
+      // Try to verify user
+      const directLoginResponse = await loginDirect(username);
       
-      if (checkResult.status === 'ok') {
-        if (checkResult.credentialCount === 0) {
-          setMessage(`No passkeys found for user "${username}". Please register again.`);
-          setIsLoggingIn(false);
-          return;
-        }
+      if (directLoginResponse.status === 'ok') {
+        console.log('Direct login succeeded:', directLoginResponse);
         
-        // Continue with WebAuthn authentication since user & credentials exist
-        console.log(`User has ${checkResult.credentialCount} passkeys registered`);
+        if (directLoginResponse.authenticated) {
+          // If direct login already authenticated the user
+          setMessage('Login successful!');
+          
+          // Set the authenticated user in context
+          const userData = directLoginResponse.user || { username: username, displayName: username };
+          login(userData);
+          
+          // Navigate to dashboard
+          setTimeout(() => {
+            navigate('/dashboard');
+          }, 500);
+        } else {
+          // Direct login verified user but needs WebAuthn authentication
+          console.log('User verified, proceeding to WebAuthn authentication');
+          await handleWebAuthnAuthentication(username);
+        }
       } else {
-        setMessage(`User "${username}" not found. Please register first.`);
-        setIsLoggingIn(false);
-        return;
+        throw new Error(directLoginResponse.message || 'Verification failed');
       }
-
-      // Proceed with WebAuthn authentication
-      await handleWebAuthnAuthentication(username);
     } catch (error) {
-      // ...existing error handling...
+      console.error('Login error:', error);
       setMessage(`Login failed: ${error.message}`);
       setIsLoggingIn(false);
     }

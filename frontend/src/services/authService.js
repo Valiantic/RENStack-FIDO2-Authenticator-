@@ -185,15 +185,22 @@ export const sendLoginResponse = async (assertionResponse) => {
   }
 };
 
-// Modified direct login function to just verify user existence
+// Improved direct login function that fully authenticates the user
 export const loginDirect = async (username) => {
   try {
-    console.log('Verifying account for:', username);
+    console.log('Attempting direct login for:', username);
     const response = await api.post('/auth/login-direct', { username });
-    console.log('User verification response:', response.data);
+    
+    // Store authenticated user in session storage if login was successful
+    if (response.data.user && (response.data.authenticated || response.data.status === 'ok')) {
+      console.log('Storing authenticated user in session storage:', response.data.user);
+      sessionStorage.setItem('authenticatedUser', JSON.stringify(response.data.user));
+    }
+    
+    console.log('Direct login response:', response.data);
     return response.data;
   } catch (error) {
-    console.error('User verification failed:', error);
+    console.error('Direct login failed:', error);
     throw error;
   }
 };

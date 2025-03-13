@@ -405,7 +405,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Direct login - modified to just verify user exists without setting authenticated state
+// Direct login - modified to provide full authentication for simpler flow
 router.post('/login-direct', async (req, res) => {
   try {
     const { username } = req.body;
@@ -413,9 +413,9 @@ router.post('/login-direct', async (req, res) => {
       return res.status(400).json({ error: 'Username required' });
     }
     
-    console.log(`Direct login verification for username: "${username}"`);
+    console.log(`Direct login attempt for username: "${username}"`);
     
-    // Find the user (no credential verification needed)
+    // Find the user
     const user = await User.findOne({ where: { username }, include: Credential });
     
     if (!user) {
@@ -431,21 +431,38 @@ router.post('/login-direct', async (req, res) => {
     
     console.log(`Found user: ${username} (ID: ${user.id}), has credentials: ${hasCredentials}`);
     
-    // Don't set authenticated session yet - just acknowledge user exists
-    // We will require WebAuthn authentication next
+    // Set session as authenticated for simplified direct login
+    req.session.authenticated = true;
+    req.session.username = username;
+    req.session.userId = user.id;
+    
+    // Explicitly save session
+    await new Promise((resolve, reject) => {
+      req.session.save(err => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    console.log(`User ${username} authenticated via direct login`);
     
     res.json({
       status: 'ok',
-      message: 'User verified, authentication required',
+      message: 'Authentication successful',
+      authenticated: true,
       userExists: true,
       hasCredentials: hasCredentials,
-      username: user.username
+      user: {
+        id: user.id,
+        username: user.username,
+        displayName: user.displayName || username
+      }
     });
     
   } catch (err) {
-    console.error('Direct login verification error:', err);
+    console.error('Direct login error:', err);
     res.status(500).json({ 
-      error: 'Verification failed', 
+      error: 'Authentication failed', 
       message: err.message 
     });
   }
