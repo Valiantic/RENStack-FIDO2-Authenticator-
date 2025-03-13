@@ -79,30 +79,23 @@ const Login = () => {
         
         // Set success state and start redirect countdown
         setAuthSuccess(true);
-        setMessage('Login successful! Redirecting to dashboard in 3 seconds...');
-        setRedirectCountdown(3);
+        setMessage('Login successful! Redirecting to dashboard...');
         
-        // Try multiple navigation methods for reliability
+        // Force immediate redirect - don't wait
         try {
-          // Store a flag in sessionStorage to force redirect on page refresh
-          sessionStorage.setItem('force_auth_redirect', 'dashboard');
+          // Clear any previous redirect attempts
+          sessionStorage.removeItem('force_auth_redirect');
+          localStorage.removeItem('redirect_attempted');
           
-          // Immediately try navigation via React Router
-          setTimeout(() => {
-            console.log('Attempting navigation to dashboard');
-            navigate('/dashboard', { replace: true });
-            
-            // Set a backup redirect using window.location after a delay
-            setTimeout(() => {
-              if (window.location.pathname !== '/dashboard') {
-                console.log('Fallback redirect to dashboard');
-                window.location.href = '/dashboard';
-              }
-            }, 1000);
-          }, 100);
+          // Mark that we're attempting to redirect
+          localStorage.setItem('redirect_attempted', 'true');
+          
+          // Use direct window location for most reliable navigation
+          window.location.href = '/dashboard';
         } catch (navError) {
           console.error('Navigation error:', navError);
-          window.location.href = '/dashboard';
+          // As a last resort
+          window.location.replace('/dashboard');
         }
       } else {
         throw new Error(verificationRes.message || 'Login failed');

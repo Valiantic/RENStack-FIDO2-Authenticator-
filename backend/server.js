@@ -271,6 +271,40 @@ app.use((err, req, res, next) => {
     });
 });
 
+// Add SPA catch-all route to support client-side routing
+app.get('*', (req, res, next) => {
+  // Skip API routes and static files
+  if (req.url.startsWith('/auth/') || req.url.startsWith('/api/')) {
+    return next();
+  }
+  
+  console.log('Catch-all route for SPA routing:', req.url);
+  res.json({
+    status: 'error',
+    message: 'This is a REST API server. Frontend routes should be handled by your client application.',
+    requestedPath: req.url
+  });
+});
+
+// Add a route to check if other routes exist
+app.get('/check-route/:path(*)', (req, res) => {
+  const routePath = '/' + req.params.path;
+  
+  // Check if route exists in Express router
+  const routeExists = app._router.stack.some(r => {
+    if (r.route && r.route.path) {
+      return r.route.path === routePath;
+    }
+    return false;
+  });
+  
+  res.json({
+    path: routePath,
+    exists: routeExists,
+    message: routeExists ? 'Route exists' : 'Route does not exist'
+  });
+});
+
 // Sync models and start server
 sequelize.sync().then(() => {
   const BACKEND_PORT = process.env.BACKEND_PORT || process.env.PORT || 3001;

@@ -184,6 +184,12 @@ export const AuthProvider = ({ children }) => {
     }
   }, [currentUser]);
 
+  // Function to force dashboard navigation - can be called from any component
+  const forceDashboardNavigation = useCallback(() => {
+    console.log('Forcing navigation to dashboard...');
+    window.location.href = '/dashboard';
+  }, []);
+
   const value = {
     currentUser,
     authChecked,
@@ -192,7 +198,8 @@ export const AuthProvider = ({ children }) => {
     register,
     logout,
     isAuthenticated: !!currentUser,
-    checkSessionValidity // Export so components can trigger a manual check & handle redirection
+    checkSessionValidity,
+    forceDashboardNavigation // Add this function to context
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

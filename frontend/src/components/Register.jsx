@@ -75,35 +75,20 @@ const Register = () => {
                 // Pass user data to the context
                 register(userData);
 
-                // Show clearer success message with countdown
-                let countdown = 3;
-                setMessage(`Registration successful! Redirecting in ${countdown} seconds...`);
+                // Force immediate redirect - don't wait
+                setMessage('Registration successful! Redirecting to dashboard...');
                 
-                const countdownInterval = setInterval(() => {
-                    countdown -= 1;
-                    setMessage(`Registration successful! Redirecting in ${countdown} seconds...`);
+                try {
+                    // Store auth info in session storage to ensure it persists
+                    sessionStorage.setItem('authenticatedUser', JSON.stringify(userData));
                     
-                    if (countdown <= 0) {
-                        clearInterval(countdownInterval);
-                        
-                        // Multiple navigation methods to ensure redirection works
-                        console.log('Redirecting to dashboard after registration');
-                        
-                        // First try the React Router navigation
-                        navigate('/dashboard', { replace: true });
-                        
-                        // After a short delay, try direct location change as fallback
-                        setTimeout(() => {
-                            window.location.href = '/dashboard';
-                        }, 500);
-                    }
-                }, 1000);
-                
-                // Add manual navigation button
-                setTimeout(() => {
-                    setMessage('Registration successful! Click below if not redirected automatically.');
-                    document.getElementById('manual-redirect')?.classList.remove('hidden');
-                }, 4000);
+                    // Use direct window location for reliable redirect  
+                    window.location.href = '/dashboard';
+                } catch (navError) {
+                    console.error('Navigation error:', navError);
+                    // Fall back to replace
+                    window.location.replace('/dashboard');
+                }
             } else {
                 throw new Error('Registration failed: The operation either timed out or returned invalid data');
             }
