@@ -90,6 +90,9 @@ export const verifyRegistration = async (credentialId, username) => {
 // Login services
 export const getLoginOptions = async (username) => {
   try {
+    console.log('Requesting login options for username:', username);
+    
+    // Ensure we're explicitly using POST method
     const response = await api.post('/auth/login', { username });
     
     // Store session identifier if provided by server
@@ -97,10 +100,28 @@ export const getLoginOptions = async (username) => {
       localStorage.setItem('auth_session_id', response.data.sessionId);
     }
     
+    console.log('Received login options:', response.data);
     return response.data;
   } catch (error) {
     console.error('Login options request failed:', error);
-    throw error;
+    
+    // Add more specific error handling
+    let errorMessage = 'Failed to start login process';
+    if (error.response) {
+      if (error.response.status === 400) {
+        errorMessage = error.response.data.error || 'Invalid username';
+      } else if (error.response.status === 404) {
+        errorMessage = 'Login endpoint not found. The server might be misconfigured.';
+      } else if (error.response.status === 405) {
+        errorMessage = 'Wrong HTTP method used for login request.';
+      } else {
+        errorMessage = error.response.data.error || error.response.data.message || error.message;
+      }
+    } else if (error.request) {
+      errorMessage = 'Server did not respond. Please check your connection.';
+    }
+    
+    throw new Error(errorMessage);
   }
 };
 

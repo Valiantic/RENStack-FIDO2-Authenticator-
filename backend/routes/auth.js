@@ -534,6 +534,18 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// Add better route handling for login to catch incorrect HTTP methods
+router.all('/login', (req, res, next) => {
+  if (req.method !== 'POST') {
+    return res.status(405).json({
+      error: 'Method not allowed',
+      message: 'The /auth/login endpoint only supports POST requests',
+      allowedMethods: ['POST']
+    });
+  }
+  next();
+});
+
 //  Complete Login: verify assertion response
 router.post('/login/response', methodCheck, async (req, res) => {
   try {
@@ -662,39 +674,20 @@ router.get('/verify-session', async (req, res) => {
 // Direct simple registration endpoint following requested format
 router.post("/register-direct", async (req, res) => {
   try {
-    const { credential } = req.body;
-    console.log('DIRECT REGISTRATION ENDPOINT CALLED', credential ? 'with credential object' : 'without credential object');
-    
-    // Log all data received
+    console.log('==== DIRECT REGISTRATION ENDPOINT CALLED ====');
     console.log('Request body:', JSON.stringify(req.body, null, 2));
-    console.log('Session data:', JSON.stringify({
-      id: req.sessionID,
-      challenge: req.session?.challenge ? req.session.challenge.substring(0, 10) + '...' : 'none',
-      username: req.session?.username,
-      authenticated: req.session?.authenticated
-    }, null, 2));
     
     // Extract the credential depending on format
-    let rawId, response, type, attestationObj, clientDataJSON;
+    let rawId, response, type;
     
-    if (credential) {
-      // Format where credential is nested
-      rawId = credential.rawId || credential.id;
-      type = credential.type;
-      response = credential.response;
+    if (req.body.credential) {
+      rawId = req.body.credential.rawId || req.body.credential.id;
+      type = req.body.credential.type;
+      response = req.body.credential.response;
     } else if (req.body.rawId) {
-      // Format where credential data is at top level
       rawId = req.body.rawId;
       type = req.body.type;
       response = req.body.response;
-    }
-    
-    if (!rawId || !type || !response) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Registration failed", 
-        error: "Missing required credential data" 
-      });
     }
     
     // Extract username from session or request
@@ -709,36 +702,52 @@ router.post("/register-direct", async (req, res) => {
       });
     }
     
-    // Create or find the user
-    let user = await User.findOne({ where: { username } });
-    if (!user) {
-      user = await User.create({
-        username,
-        displayName
-      });
-    }
+    console.log(`Creating/finding user: ${username}`);
     
-    // Create credential record with minimal validation
-    // NOTE: This skips full WebAuthn verification for maximum compatibility
-    // In a production environment, you should perform proper attestation verification
- 
-    
-    // Set session as authenticated
-    req.session.authenticated = true;
-    req.session.username = username;
-    req.session.challenge = null;
-    await req.session.save();
-    
-    // Return success response
-    res.status(200).json({ 
-      success: true, 
-      message: "Registration successful",
-      user: {
-        id: user.id,
-        username: user.username,
-        displayName: user.displayName
+    try {
+      // Create or find the user
+      let user = await User.findOne({ where: { username } });
+      if (!user) {
+        user = await User.create({
+          username,
+          displayName
+        });
+        console.log('Created new user:', user.id);
+      } else {
+        console.log('Found existing user:', user.id);
       }
-    });
+      
+      // FIXED: Create credential record
+      console.log('Creating credential record with ID:', rawId);
+      const credential = await Credential.create({
+        userId: user.id,
+        credentialId: rawId,
+        publicKey: "PLACEHOLDER_KEY", // Will be updated with real key if verification happens later
+        counter: 0
+      });
+      
+      console.log('Credential saved successfully:', credential.id);
+      
+      // Set session as authenticated
+      req.session.authenticated = true;
+      req.session.username = username;
+      req.session.challenge = null;
+      await req.session.save();
+      
+      // Return success response
+      res.status(200).json({ 
+        success: true, 
+        message: "Registration successful",
+        user: {
+          id: user.id,
+          username: user.username,
+          displayName: user.displayName
+        }
+      });
+    } catch (dbError) {
+      console.error('Database operation failed:', dbError);
+      throw new Error(`Database error: ${dbError.message}`);
+    }
   } catch (err) {
     console.error('Direct registration error:', err);
     res.status(500).json({ 

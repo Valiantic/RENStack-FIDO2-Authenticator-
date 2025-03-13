@@ -150,6 +150,38 @@ app.get('/check-auth-routes', (req, res) => {
   });
 });
 
+// Add a simple redirect for login GET requests to help users
+app.get('/auth/login', (req, res) => {
+  res.status(405).json({
+    error: 'Method not allowed',
+    message: 'Please use POST request for login',
+    note: 'If you are trying to access the login page, please go to the frontend application'
+  });
+});
+
+// Add diagnostic routes for database connection
+app.get('/db-status', async (req, res) => {
+  try {
+    await sequelize.authenticate();
+    const dbConfig = {
+      dialect: sequelize.options.dialect,
+      host: sequelize.options.host,
+      port: sequelize.options.port,
+      database: sequelize.options.database,
+      username: sequelize.options.username,
+      logging: !!sequelize.options.logging,
+      connected: true
+    };
+    res.json({ status: 'ok', message: 'Database connection successful', config: dbConfig });
+  } catch (error) {
+    res.status(500).json({ 
+      status: 'error', 
+      message: 'Database connection failed', 
+      error: error.message 
+    });
+  }
+});
+
 // Basic test route
 app.get('/', (req, res) => {
     res.send('FIDO2 Authenticator Server is running.');
