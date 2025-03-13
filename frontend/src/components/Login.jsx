@@ -15,22 +15,33 @@ const Login = () => {
   async function handleWebAuthnAuthentication(username) {
     try {
       setMessage('Starting WebAuthn authentication...');
-
-      // Get assertion options from server
-      const assertionOptions = await getLoginOptions(username);
       
-      // Get credential from authenticator
-      const assertionResponse = await getCredential(assertionOptions);
-
-      // Send assertion to server
-      const verificationRes = await sendLoginResponse(assertionResponse);
-
-      if (verificationRes.status === 'ok') {
-        setMessage('Login successful!');
-        login(verificationRes.user); // Use context login function
-        navigate('/dashboard');
-      } else {
-        throw new Error(verificationRes.message || 'Login failed');
+      try {
+        // Get assertion options from server
+        const assertionOptions = await getLoginOptions(username);
+        
+        // Get credential from authenticator
+        const assertionResponse = await getCredential(assertionOptions);
+        
+        // Send assertion to server
+        const verificationRes = await sendLoginResponse(assertionResponse);
+        
+        if (verificationRes.status === 'ok') {
+          setMessage('Login successful!');
+          login(verificationRes.user); // Use context login function
+          navigate('/dashboard');
+        } else {
+          throw new Error(verificationRes.message || 'Login failed');
+        }
+      } catch (error) {
+        // Check for specific error types
+        if (error.message?.includes('User not found')) {
+          throw new Error(`User "${username}" not found. Please register first.`);
+        } else if (error.message?.includes('No credentials registered')) {
+          throw new Error(`No passkeys found for "${username}". Please re-register.`);
+        } else {
+          throw error;
+        }
       }
     } catch (error) {
       console.error('WebAuthn authentication error:', error);
@@ -51,22 +62,32 @@ const Login = () => {
     setIsLoggingIn(true);
     
     try {
-      // First stage: Just verify the user exists
-      const response = await loginDirect(username);
-      
-      if (response.status === 'ok' && response.userExists) {
-        // Store the verified username for the next step
-        setVerifiedUsername(username);
-        setMessage('User verified. Please authenticate with your security key or biometrics...');
+      // First check if the user has credentials using our diagnostic endpoint
+      try {
+        const checkResponse = await api.get(`/auth/debug/user-credentials/${encodeURIComponent(username)}`);
         
-        // Move to second stage: Require WebAuthn authentication
-        await handleWebAuthnAuthentication(username);
-      } else {
-        setMessage('Account verification failed: ' + (response.message || 'User not found'));
-        setIsLoggingIn(false);
+        if (checkResponse.data.status === 'ok') {
+          if (checkResponse.data.credentialCount === 0) {
+            setMessage(`No passkeys found for user "${username}". Please register again.`);
+            setIsLoggingIn(false);
+            return;
+          }
+          
+          // Continue with WebAuthn authentication since user & credentials exist
+          console.log(`User has ${checkResponse.data.credentialCount} passkeys registered`);
+        } else {
+          setMessage(`User "${username}" not found. Please register first.`);
+          setIsLoggingIn(false);
+          return;
+        }
+      } catch (checkError) {
+        console.warn('Credential check failed, continuing with login attempt:', checkError);
       }
+      
+      // Proceed with WebAuthn authentication
+      await handleWebAuthnAuthentication(username);
     } catch (error) {
-      setMessage('Account verification failed: ' + (error.message || 'Unknown error'));
+      setMessage(`Login failed: ${error.message}`);
       setIsLoggingIn(false);
     }
   }

@@ -100,28 +100,27 @@ export const getLoginOptions = async (username) => {
       localStorage.setItem('auth_session_id', response.data.sessionId);
     }
     
-    console.log('Received login options:', response.data);
+    console.log('Received login options:', {
+      ...response.data,
+      challenge: response.data.challenge ? response.data.challenge.substring(0, 10) + '...' : 'none',
+      allowCredentials: response.data.allowCredentials?.map(c => ({id: c.id.substring(0, 10) + '...'}))
+    });
+    
+    // If there are no allowed credentials, this is an error state
+    if (!response.data.allowCredentials || response.data.allowCredentials.length === 0) {
+      throw new Error('No passkeys available for this user');
+    }
+    
     return response.data;
   } catch (error) {
     console.error('Login options request failed:', error);
     
-    // Add more specific error handling
-    let errorMessage = 'Failed to start login process';
-    if (error.response) {
-      if (error.response.status === 400) {
-        errorMessage = error.response.data.error || 'Invalid username';
-      } else if (error.response.status === 404) {
-        errorMessage = 'Login endpoint not found. The server might be misconfigured.';
-      } else if (error.response.status === 405) {
-        errorMessage = 'Wrong HTTP method used for login request.';
-      } else {
-        errorMessage = error.response.data.error || error.response.data.message || error.message;
-      }
-    } else if (error.request) {
-      errorMessage = 'Server did not respond. Please check your connection.';
+    // Handle specific errors
+    if (error.response?.data?.error) {
+      throw new Error(error.response.data.error);
     }
     
-    throw new Error(errorMessage);
+    throw error;
   }
 };
 
@@ -187,6 +186,17 @@ export const loginDirect = async (username) => {
     return response.data;
   } catch (error) {
     console.error('User verification failed:', error);
+    throw error;
+  }
+};
+
+// Add a way to check if a user has credentials
+export const checkUserCredentials = async (username) => {
+  try {
+    const response = await api.get(`/auth/debug/user-credentials/${encodeURIComponent(username)}`);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to check user credentials:', error);
     throw error;
   }
 };

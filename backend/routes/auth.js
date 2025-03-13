@@ -332,35 +332,75 @@ router.post('/login', async (req, res) => {
   try {
     const { username } = req.body;
     if (!username) return res.status(400).json({ error: 'Missing username' });
-
-    // Fetch user's registered credentials
-    const user = await User.findOne({ where: { username }, include: Credential });
-    if (!user || !user.Credentials || user.Credentials.length === 0) {
-      return res.status(400).json({ error: 'User not found or no credentials registered' });
+    
+    console.log(`[DEBUG] Login attempt for username: "${username}"`);
+    
+    // First check if the user exists at all
+    const userExists = await User.findOne({ where: { username } });
+    if (!userExists) {
+      console.log(`[DEBUG] User not found: "${username}"`);
+      return res.status(400).json({ error: 'User not found' });
     }
-
-    // Generate assertion options
-    const assertionOptions = await fido2.assertionOptions();
-
-    // Convert challenge to base64url string
-    assertionOptions.challenge = bufferToBase64url(assertionOptions.challenge);
-
-    // Format credential IDs
-    assertionOptions.allowCredentials = user.Credentials.map(cred => ({
-      id: cred.credentialId,
-      type: 'public-key',
-      transports: ['internal']
-    }));
-
-    // Store in session
-    req.session.challenge = assertionOptions.challenge;
-    req.session.username = username;
-    await req.session.save();
-
-    console.log('Sending assertion options:', assertionOptions);
-    res.json(assertionOptions);
+    
+    console.log(`[DEBUG] User found with ID: ${userExists.id}`);
+    
+    // Then separately check for credentials
+    try {
+      // Force a direct query to ensure credentials are loaded
+      const credentials = await Credential.findAll({ 
+        where: { userId: userExists.id }
+      });
+      
+      console.log(`[DEBUG] Found ${credentials.length} credentials for user ${username}`);
+      
+      if (!credentials || credentials.length === 0) {
+        console.log(`[DEBUG] No credentials found for user: "${username}"`);
+        return res.status(400).json({ 
+          error: 'No credentials registered for this user',
+          diagnosticInfo: {
+            userFound: true,
+            credentialsFound: false,
+            userId: userExists.id
+          }
+        });
+      }
+      
+      // Log credential details to help debug
+      credentials.forEach((cred, idx) => {
+        console.log(`[DEBUG] Credential ${idx+1}: ID=${cred.id}, credentialId=${cred.credentialId.substring(0, 10)}..., userId=${cred.userId}`);
+      });
+      
+      // Generate assertion options
+      const assertionOptions = await fido2.assertionOptions();
+      
+      // Convert challenge to base64url string
+      assertionOptions.challenge = bufferToBase64url(assertionOptions.challenge);
+      
+      // Format credential IDs
+      assertionOptions.allowCredentials = credentials.map(cred => ({
+        id: cred.credentialId,
+        type: 'public-key',
+        transports: ['internal', 'hybrid', 'usb']
+      }));
+      
+      // Store in session
+      req.session.challenge = assertionOptions.challenge;
+      req.session.username = username;
+      await req.session.save();
+      
+      console.log('[DEBUG] Sending assertion options with credentials:', 
+        assertionOptions.allowCredentials.map(c => ({id: c.id.substring(0, 10) + "..."})));
+      
+      res.json(assertionOptions);
+    } catch (dbErr) {
+      console.error('[ERROR] Database error while retrieving credentials:', dbErr);
+      return res.status(500).json({ 
+        error: 'Error retrieving user credentials', 
+        message: dbErr.message
+      });
+    }
   } catch (err) {
-    console.error('Login initiation error:', err);
+    console.error('[ERROR] Login initiation error:', err);
     res.status(500).json({ error: 'Login initiation failed', message: err.message });
   }
 });
@@ -531,6 +571,51 @@ router.get('/verify-session', async (req, res) => {
     console.error('Session verification error:', err);
     res.status(500).json({
       error: 'Session verification failed',
+      message: err.message
+    });
+  }
+});
+
+// Add a diagnostic endpoint for debugging credential issues
+router.get('/debug/user-credentials/:username', async (req, res) => {
+  try {
+    const { username } = req.params;
+    
+    // Find user
+    const user = await User.findOne({ where: { username } });
+    
+    if (!user) {
+      return res.json({
+        status: 'error',
+        message: 'User not found',
+        username: username
+      });
+    }
+    
+    // Find credentials separately
+    const credentials = await Credential.findAll({ where: { userId: user.id } });
+    
+    res.json({
+      status: 'ok',
+      user: {
+        id: user.id,
+        username: user.username,
+        displayName: user.displayName,
+        createdAt: user.createdAt
+      },
+      credentials: credentials.map(c => ({
+        id: c.id,
+        credentialId: c.credentialId.substring(0, 15) + '...',
+        publicKeyType: c.publicKey === 'PLACEHOLDER_KEY' ? 'placeholder' : 'full',
+        counter: c.counter,
+        createdAt: c.createdAt
+      })),
+      credentialCount: credentials.length
+    });
+  } catch (err) {
+    console.error('Error in credential debug endpoint:', err);
+    res.status(500).json({
+      status: 'error',
       message: err.message
     });
   }
