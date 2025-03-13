@@ -57,7 +57,7 @@ export const AuthProvider = ({ children }) => {
     }
   }, [currentUser]);
 
-  // Login function called after successful authentication
+  // Enhanced login function with navigation support
   const login = useCallback((userData) => {
     console.log('Setting authenticated user:', userData);
     
@@ -69,9 +69,17 @@ export const AuthProvider = ({ children }) => {
     // Store user in state
     setCurrentUser(userData);
     
-    // Also store in sessionStorage as backup
+    // Also store in sessionStorage as backup with a timestamp
     try {
-      sessionStorage.setItem('authenticatedUser', JSON.stringify(userData));
+      const authData = {
+        ...userData,
+        authenticatedAt: new Date().toISOString(),
+        shouldRedirect: true // Flag to help with redirects
+      };
+      
+      sessionStorage.setItem('authenticatedUser', JSON.stringify(authData));
+      // Set a separate flag for redirection
+      sessionStorage.setItem('auth_redirect_pending', 'dashboard');
     } catch (e) {
       console.warn('Failed to store auth data in sessionStorage:', e);
     }
@@ -164,6 +172,17 @@ export const AuthProvider = ({ children }) => {
     // Cleanup interval on unmount
     return () => clearInterval(sessionCheckInterval);
   }, [currentUser, checkSessionValidity]);
+
+  // Check for pending redirects in session storage on auth state change
+  useEffect(() => {
+    if (currentUser && sessionStorage.getItem('auth_redirect_pending')) {
+      const redirectTarget = sessionStorage.getItem('auth_redirect_pending');
+      console.log(`Auth redirect pending to: ${redirectTarget}`);
+      
+      // Clear the redirect flag
+      sessionStorage.removeItem('auth_redirect_pending');
+    }
+  }, [currentUser]);
 
   const value = {
     currentUser,

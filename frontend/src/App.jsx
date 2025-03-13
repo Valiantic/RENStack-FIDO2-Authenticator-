@@ -1,22 +1,35 @@
 import React from 'react';
-import { Routes, Route, Navigate, BrowserRouter } from 'react-router-dom';
+import { Routes, Route, Navigate, BrowserRouter, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './components/Login';
 import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 
 
-// Protected route component
+// Protected route component with enhanced session validation
 const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, currentUser } = useAuth();
+  const navigate = useNavigate();
+  
+  // Check both context auth state and session storage
+  const checkAuthFromStorage = () => {
+    const storedUser = sessionStorage.getItem('authenticatedUser');
+    return !!storedUser;
+  };
   
   // Show loading while checking auth
   if (loading) {
-    return <div>Loading...</div>;
+    return <div className="flex justify-center items-center h-screen">
+      <div className="text-xl">Loading...</div>
+    </div>;
   }
   
-  // Redirect to login if not authenticated
-  if (!isAuthenticated) {
+  // Extra validation beyond the context
+  const hasAuthInStorage = checkAuthFromStorage();
+  
+  // Redirect to login if not authenticated by any means
+  if (!isAuthenticated && !hasAuthInStorage) {
+    console.log('Not authenticated, redirecting to login');
     return <Navigate to="/login" replace />;
   }
   

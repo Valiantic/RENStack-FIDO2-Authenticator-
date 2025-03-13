@@ -28,7 +28,7 @@ const Login = () => {
       const verificationRes = await sendLoginResponse(assertionResponse);
       
       if (verificationRes.status === 'ok') {
-        setMessage('Login successful!');
+        setMessage('Login successful! Redirecting to dashboard...');
         console.log('Login successful, user data:', verificationRes.user);
         
         // Save authentication info
@@ -36,9 +36,23 @@ const Login = () => {
         
         // Clear local form state
         setUsername('');
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 500);
+        
+        // Force navigation with hard redirect if setTimeout doesn't work
+        console.log('Navigating to dashboard...');
+        try {
+          // First try normal navigation
+          navigate('/dashboard', { replace: true });
+          
+          // As backup, set a timeout to force redirect
+          setTimeout(() => {
+            console.log('Timeout redirect to dashboard');
+            window.location.href = '/dashboard';
+          }, 1000);
+        } catch (navError) {
+          console.error('Navigation error:', navError);
+          // Fall back to window.location as last resort
+          window.location.href = '/dashboard';
+        }
       } else {
         throw new Error(verificationRes.message || 'Login failed');
       }
@@ -97,13 +111,19 @@ const Login = () => {
       const directLoginResponse = await loginDirect(username);
       
       if (directLoginResponse.status === 'ok') {
-        setMessage('Login successful! (No passkey verification)');
+        setMessage('Login successful! Redirecting...');
         
         // Set the authenticated user in context
         login(directLoginResponse.user);
         
-        // Navigate to dashboard
-        setTimeout(() => navigate('/dashboard'), 500);
+        // Force navigation with both approaches
+        console.log('Direct login successful, navigating to dashboard...');
+        navigate('/dashboard', { replace: true });
+        
+        // Backup redirect method
+        setTimeout(() => {
+          window.location.href = '/dashboard';
+        }, 800);
       } else {
         throw new Error(directLoginResponse.message || 'Login failed');
       }
