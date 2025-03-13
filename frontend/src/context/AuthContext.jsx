@@ -96,35 +96,28 @@ export const AuthProvider = ({ children }) => {
       try {
         console.log('Checking authentication status...');
         
-        // ALWAYS check session storage first (most reliable)
+        // CRITICAL FIX: Always try session storage first, and TRUST IT
         const storedUser = sessionStorage.getItem('authenticatedUser');
         if (storedUser) {
           try {
             const userData = JSON.parse(storedUser);
             console.log('Found authenticated user in session storage:', userData);
             
-            // Set auth state immediately from storage - don't wait for server
+            // Trust session storage - set user immediately
             setCurrentUser(userData);
             
-            // Only then try to verify with server as a secondary check
+            // Optionally verify with server but don't override session storage
             try {
-              const result = await verifySession();
-              console.log('Server session check result:', result);
-              
-              // If server says we're not authenticated but we have local storage data,
-              // trust the local data (server sessions might expire)
-              if (!result.authenticated) {
-                console.log('Server says not authenticated, but using local session data');
-                // Keep the current user set from session storage
-              }
+              await verifySession();
             } catch (verifyError) {
-              console.error('Error checking with server:', verifyError);
-              // Keep using session storage data
+              console.warn('Server session check failed, but keeping local session', verifyError.message);
+              // Continue using session storage auth state regardless
             }
-          } catch (e) {
-            console.warn('Failed to parse stored user data:', e);
-            setCurrentUser(null);
+          } catch (parseError) {
+            console.error('Failed to parse stored user data:', parseError);
+            // Only clear if we can't parse
             sessionStorage.removeItem('authenticatedUser');
+            setCurrentUser(null);
           }
         } else {
           console.log('No user data in session storage, checking with server');

@@ -68,6 +68,44 @@ const methodCheck = (req, res, next) => {
   next();
 };
 
+// New function to reliably save session
+const saveSession = async (req) => {
+  if (!req.session) {
+    throw new Error('Session not available');
+  }
+  
+  return new Promise((resolve, reject) => {
+    req.session.save(err => {
+      if (err) {
+        console.error('Failed to save session:', err);
+        reject(err);
+      } else {
+        resolve();
+      }
+    });
+  });
+};
+
+// Helper to store challenge securely
+const storeChallenge = async (req, challenge, username = null) => {
+  if (!req.session) {
+    throw new Error('Session not available');
+  }
+  
+  req.session.challenge = challenge;
+  if (username) req.session.username = username;
+  req.session.challengeTimestamp = Date.now();
+  
+  await saveSession(req);
+  
+  // Log session state after storing
+  console.log(`Challenge stored in session ${req.sessionID}:`, {
+    challenge: challenge.substring(0, 10) + '...',
+    username: req.session.username,
+    timestamp: req.session.challengeTimestamp
+  });
+};
+
 // ---------- Registration ----------
 
 //  Initiate Registration: send options (challenge, etc.)
@@ -111,29 +149,24 @@ router.post('/register', async (req, res) => {
 
     console.log(`Using RP ID: ${rpId}`);
 
-    // Store challenge in both session and explicitly return it to client for backup
-    req.session.challenge = registrationOptions.challenge;
-    req.session.username = username;
+    // Store challenge using our helper function
+    await storeChallenge(req, registrationOptions.challenge, username);
     req.session.displayName = displayName;
-    
-    // Force save session
-    await new Promise((resolve, reject) => {
-      req.session.save(err => {
-        if (err) {
-          console.error('Failed to save session:', err);
-          reject(err);
-        } else {
-          resolve();
-        }
-      });
-    });
+    await saveSession(req);
 
-    console.log('Registration options generated. Session ID:', req.sessionID);
+    // Important client-side debugging info
+    console.log(`Registration options sent to client. SessionID: ${req.sessionID}`);
+
     res.json({
       ...registrationOptions,
       sessionId: req.sessionID,
-      // Return challenge in response for client-side backup
-      _challengeBackup: registrationOptions.challenge
+      _challengeBackup: registrationOptions.challenge,
+      _debugAuthInfo: {
+        serverTime: new Date().toISOString(),
+        sessionId: req.sessionID,
+        hasChallenge: !!req.session.challenge,
+        challengeTimestamp: req.session.challengeTimestamp
+      }
     });
   } catch (err) {
     console.error('Error creating registration options:', err);
@@ -421,33 +454,29 @@ router.post('/login', async (req, res) => {
         transports: ['internal', 'hybrid', 'usb']
       }));
       
-      // Store in session and force save
-      req.session.challenge = assertionOptions.challenge;
-      req.session.username = username;
+      // Store challenge and username using our helper
+      await storeChallenge(req, assertionOptions.challenge, username);
       
-      await new Promise((resolve, reject) => {
-        req.session.save(err => {
-          if (err) {
-            console.error('Failed to save session:', err);
-            reject(err);
-          } else {
-            resolve();
-          }
-        });
-      });
-      
-      console.log('[DEBUG] Session after storing challenge:', {
+      // Log full session state for debugging
+      console.log('[DEBUG] Full session after storing challenge:', {
         id: req.sessionID,
         challenge: assertionOptions.challenge.substring(0, 10) + '...',
-        username: req.session.username
+        username: req.session.username,
+        authenticated: req.session.authenticated,
+        challengeTimestamp: req.session.challengeTimestamp
       });
       
-      // Include the challenge in the response for client backup
       res.json({
         ...assertionOptions,
         sessionId: req.sessionID,
-        // Return challenge in response for client-side backup
-        _challengeBackup: assertionOptions.challenge
+        _challengeBackup: assertionOptions.challenge,
+        _debugAuthInfo: {
+          serverTime: new Date().toISOString(),
+          sessionId: req.sessionID,
+          hasChallenge: !!req.session.challenge,
+          username: req.session.username,
+          challengeTimestamp: req.session.challengeTimestamp
+        }
       });
     } catch (dbErr) {
       console.error('[ERROR] Database error while retrieving credentials:', dbErr);
@@ -607,28 +636,36 @@ router.post('/login/response', methodCheck, async (req, res) => {
     req.session.authenticated = true; 
     req.session.userId = user.id; // Add user ID to session
     req.session.username = username; // Ensure username is in session
-    
-    // Force session save and wait for it to complete
-    await new Promise((resolve, reject) => {
-      req.session.save(err => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
+    req.session.lastLogin = new Date().toISOString();
+    req.session.challenge = null; // Clear challenge
+
+    try {
+      await saveSession(req);
+      console.log('[DEBUG] Session successfully saved after authentication');
+    } catch (saveError) {
+      console.error('[ERROR] Failed to save session after successful auth:', saveError);
+      // Continue anyway as we'll handle it client-side too
+    }
 
     console.log('Session after authentication:', {
       id: req.sessionID,
       authenticated: req.session.authenticated,
-      username: req.session.username
+      username: req.session.username,
+      lastLogin: req.session.lastLogin
     });
 
-    res.json({ 
-      status: 'ok', 
+    res.json({
+      status: 'ok',
       message: 'Authentication successful',
       user: {
         id: user.id,
         username: user.username,
         displayName: user.displayName
+      },
+      sessionInfo: {
+        id: req.sessionID,
+        authenticated: req.session.authenticated,
+        lastLogin: req.session.lastLogin
       }
     });
 
@@ -758,6 +795,28 @@ router.get('/debug/user-credentials/:username', async (req, res) => {
       message: err.message
     });
   }
+});
+
+// Add a session diagnostics endpoint
+router.get('/debug/session-info', (req, res) => {
+  const sessionInfo = {
+    id: req.sessionID,
+    hasSession: !!req.session,
+    cookiePresent: !!req.headers.cookie,
+    createdAt: req.session?.createdAt || null,
+    authenticated: req.session?.authenticated || false,
+    username: req.session?.username || null,
+    challengePresent: !!req.session?.challenge,
+    challengeTimestamp: req.session?.challengeTimestamp || null,
+    serverTime: new Date().toISOString()
+  };
+  
+  console.log('Session debug info requested:', sessionInfo);
+  
+  res.json({
+    status: 'ok',
+    sessionInfo
+  });
 });
 
 module.exports = router;

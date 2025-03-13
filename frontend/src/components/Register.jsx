@@ -66,32 +66,27 @@ const Register = () => {
             if (finalizeRes.status === 'ok' || finalizeRes.success === true) {
                 setMessage('Registration successful! Redirecting to dashboard...');
                 
-                // Use the user object from the response
-                const userData = finalizeRes.user || {
-                    username: username,
-                    displayName: displayName,
-                    id: finalizeRes.userId || Date.now() // Ensure we have some ID
+                // Ensure we have a complete user object with ID
+                const userData = {
+                  id: finalizeRes.user?.id || Date.now(),
+                  username: finalizeRes.user?.username || username,
+                  displayName: finalizeRes.user?.displayName || displayName
                 };
                 
-                // Store authentication in multiple locations for reliability
-                localStorage.setItem('last_auth_action', 'register_success');
-                localStorage.setItem('auth_username', username);
+                console.log('Registration successful! User data:', userData);
                 
-                // Set authenticated in session storage first (most important)
+                // CRITICAL FIX #1: Store authenticated user in session storage FIRST
                 sessionStorage.setItem('authenticatedUser', JSON.stringify(userData));
+                localStorage.setItem('authenticated', 'true');
                 
-                // Then update context state
-                register(userData);
-                
-                // Show success message
-                setMessage('Registration successful! Redirecting to dashboard...');
-                
-                // HARDCODED REDIRECT - most reliable method
+                // CRITICAL FIX #2: Use a direct URL change instead of Router navigation
+                // Add timestamp to force a complete reload and skip routing issues
                 setTimeout(() => {
-                    console.log('Forcing dashboard navigation via window.location');
-                    // Force reload to clear any potential state issues and ensure a fresh start
-                    window.location.href = '/dashboard';
-                }, 500);
+                  window.location.href = `/dashboard?auth=1&t=${Date.now()}`;
+                }, 300);
+                
+                // Only then update the React context (might not finish before redirect)
+                register(userData);
             } else {
                 throw new Error('Registration failed: The operation either timed out or returned invalid data');
             }

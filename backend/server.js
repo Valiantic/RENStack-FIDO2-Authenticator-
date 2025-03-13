@@ -79,6 +79,13 @@ const sessionConfig = {
     }
 };
 
+// Important: Add this before using session middleware
+// Memory store is not suitable for production - warning and fallback
+if (process.env.NODE_ENV === 'production') {
+    console.warn('WARNING: Using default memory store for sessions. This is not suitable for production.');
+    console.warn('Consider using a persistent session store like connect-redis or connect-mongo');
+}
+
 // Add domain to cookie in production
 if (process.env.NODE_ENV === 'production' && process.env.COOKIE_DOMAIN) {
     sessionConfig.cookie.domain = process.env.COOKIE_DOMAIN;
@@ -111,6 +118,11 @@ app.use((req, res, next) => {
 // Session tracking middleware
 app.use((req, res, next) => {
     // Generate a session ID for tracking if needed
+    if (!req.session) {
+        console.error('Session middleware not initialized properly');
+        return next(new Error('Session middleware failure'));
+    }
+    
     if (!req.session.initialized) {
         req.session.initialized = true;
         req.session.createdAt = new Date().toISOString();
@@ -271,21 +283,6 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Add SPA catch-all route to support client-side routing
-app.get('*', (req, res, next) => {
-  // Skip API routes and static files
-  if (req.url.startsWith('/auth/') || req.url.startsWith('/api/')) {
-    return next();
-  }
-  
-  console.log('Catch-all route for SPA routing:', req.url);
-  res.json({
-    status: 'error',
-    message: 'This is a REST API server. Frontend routes should be handled by your client application.',
-    requestedPath: req.url
-  });
-});
-
 // Add a route to check if other routes exist
 app.get('/check-route/:path(*)', (req, res) => {
   const routePath = '/' + req.params.path;
@@ -303,6 +300,25 @@ app.get('/check-route/:path(*)', (req, res) => {
     exists: routeExists,
     message: routeExists ? 'Route exists' : 'Route does not exist'
   });
+});
+
+// This should be the LAST route defined
+app.get('*', (req, res, next) => {
+    // Skip API routes and known endpoints
+    if (req.url.startsWith('/auth/') || 
+        req.url.startsWith('/api/') || 
+        req.url === '/session-check' ||
+        req.url === '/db-status' ||
+        req.url.startsWith('/check-route/')) {
+        return next();
+    }
+    
+    console.log('Catch-all route for SPA routing:', req.url);
+    res.json({
+        status: 'error',
+        message: 'This is a REST API server. Frontend routes should be handled by your client application.',
+        requestedPath: req.url
+    });
 });
 
 // Sync models and start server

@@ -46,7 +46,7 @@ const Login = () => {
     }
   }, [navigate]);
 
-  // WebAuthn authentication with more reliable redirect
+  // Fixed WebAuthn authentication function
   async function handleWebAuthnAuthentication(username) {
     try {
       setMessage('Starting WebAuthn authentication...');
@@ -74,30 +74,28 @@ const Login = () => {
       if (verificationRes.status === 'ok') {
         console.log('Authentication successful!', verificationRes);
         
-        // Ensure we have a complete user object
-        const userData = verificationRes.user || {
-          username,
-          displayName: username,
-          id: verificationRes.userId || Date.now()
+        // Ensure we have a valid user object
+        const userData = {
+          id: verificationRes.user?.id || Date.now(),
+          username: verificationRes.user?.username || username,
+          displayName: verificationRes.user?.displayName || username
         };
         
-        // Store auth status in multiple locations
-        localStorage.setItem('last_auth_action', 'login_success');
-        localStorage.setItem('auth_username', username);
-        
-        // Most important - session storage
+        // CRITICAL FIX: Store auth in sessionStorage FIRST
         sessionStorage.setItem('authenticatedUser', JSON.stringify(userData));
+        localStorage.setItem('authenticated', 'true');
         
-        // Then update context (might get lost in navigation)
+        // Set context state (might not finish before redirect)
         login(userData);
         
+        // Visual indicator of success
         setMessage('Login successful! Redirecting to dashboard...');
+        setAuthSuccess(true);
         
-        // MOST RELIABLE: Force page navigation after delay
+        // CRITICAL FIX: Use direct URL change with forced reload
         setTimeout(() => {
-          console.log('Forcing navigation via location.href');
-          window.location.href = '/dashboard';
-        }, 500);
+          window.location.href = `/dashboard?auth=1&t=${Date.now()}`;
+        }, 300);
       } else {
         throw new Error(verificationRes.message || 'Login failed');
       }

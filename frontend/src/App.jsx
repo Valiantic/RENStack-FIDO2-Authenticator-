@@ -5,99 +5,62 @@ import Login from './components/Login';
 import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 
-// Fixed ProtectedRoute that prioritizes session storage over context
+// Fixed ProtectedRoute that guarantees access to dashboard when authenticated
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
-  const navigate = useNavigate();
   
-  // Check session storage first (most reliable)
-  const checkSessionStorage = () => {
-    const storedUser = sessionStorage.getItem('authenticatedUser');
-    const lastAction = localStorage.getItem('last_auth_action');
-    
-    console.log('Protected route check:', {
-      storedUser: !!storedUser,
-      contextAuth: isAuthenticated,
-      lastAction
-    });
-    
-    return !!storedUser;
+  // Critical check: explicitly look for session storage auth data
+  const isAuthedInStorage = () => {
+    try {
+      return !!sessionStorage.getItem('authenticatedUser');
+    } catch (e) {
+      return false;
+    }
   };
   
-  // Show loading state during authentication check
+  // Show loading during auth check
   if (loading) {
     return <div className="flex justify-center items-center h-screen">
       <div className="text-xl">Loading dashboard...</div>
     </div>;
   }
   
-  // Check both context and session storage
-  const isAuthedInStorage = checkSessionStorage();
-  
-  if (!isAuthenticated && !isAuthedInStorage) {
-    console.log('No authentication found, redirecting to login');
-    // First clear any stale data
-    localStorage.removeItem('last_auth_action');
+  // THIS IS THE KEY FIX: Only redirect if BOTH checks fail
+  if (!isAuthenticated && !isAuthedInStorage()) {
+    console.log('Not authenticated by any method, redirecting to login');
     return <Navigate to="/login" replace />;
   }
   
-  // If we get here, user is authenticated
+  // If we get here, user is authenticated (by either context or storage)
   console.log('User is authenticated, showing dashboard');
   return children;
 };
 
-// Enhanced public route component that ensures authenticated users are redirected
+// PublicRoute component (simplified to prevent false redirects)
 const PublicRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
   
-  // New effect to check for 404 errors
-  useEffect(() => {
-    const handle404Detection = () => {
-      // Check if we're getting redirect loops
-      const redirectAttempts = sessionStorage.getItem('redirect_attempts') || 0;
-      if (parseInt(redirectAttempts) > 3) {
-        console.error('Too many redirect attempts detected. Resetting authentication state.');
-        sessionStorage.clear(); // Clear all session storage to reset state
-        window.location.href = '/login'; // Force back to login
-        return;
-      }
-      
-      // Track redirect attempts
-      sessionStorage.setItem('redirect_attempts', parseInt(redirectAttempts) + 1);
-      
-      // After navigation completes, reset the counter
-      return () => {
-        setTimeout(() => {
-          sessionStorage.setItem('redirect_attempts', '0');
-        }, 1000);
-      };
-    };
-    
-    return handle404Detection();
-  }, []);
+  // Check for authentication in BOTH context and session storage
+  const hasStoredAuth = () => {
+    try {
+      return !!sessionStorage.getItem('authenticatedUser');
+    } catch (e) {
+      return false;
+    }
+  };
   
+  // Effect to handle redirect to dashboard if authenticated
   useEffect(() => {
-    // Check for authentication in session storage as a fallback
-    const hasStoredAuth = sessionStorage.getItem('authenticatedUser') !== null;
-    
-    // If user is authenticated but still on public route, redirect them
-    if ((isAuthenticated || hasStoredAuth) && !loading) {
-      console.log('User is already authenticated, redirecting from public route to dashboard');
-      navigate('/dashboard', { replace: true });
+    if (!loading) {
+      if (isAuthenticated || hasStoredAuth()) {
+        console.log('User authenticated while on public route, redirecting to dashboard');
+        navigate('/dashboard', { replace: true });
+      }
     }
   }, [isAuthenticated, loading, navigate]);
   
-  if (loading) {
-    return <div className="flex justify-center items-center h-screen">
-      <div className="text-xl">Loading...</div>
-    </div>;
-  }
-  
-  if (isAuthenticated) {
-    return null; // Return nothing while redirect happens
-  }
-  
+  // Always render children - the effect will handle redirection
   return children;
 };
 

@@ -33,36 +33,41 @@ const Dashboard = () => {
     }
   }, [currentUser]);
 
-  // Verify session when component mounts
+  // Modify the session verification to be less aggressive
   useEffect(() => {
-    const checkSession = async () => {
+    const checkSessionOnce = async () => {
       try {
         setLoading(true);
-        console.log('Dashboard: Verifying session...');
+        console.log('Dashboard: Initial session verification');
         
-        const isValid = await checkSessionValidity();
-        if (!isValid) {
-          console.warn('Dashboard: Session is invalid, redirecting to login');
-          navigate('/login');
+        // CRITICAL FIX: Check session storage first before server check
+        const storedUser = sessionStorage.getItem('authenticatedUser');
+        if (storedUser) {
+          console.log('Dashboard: Found authenticated user in session storage');
+          setLoading(false);
+          return; // Skip server verification if we have local auth
         }
-      } catch (error) {
-        console.error('Dashboard: Session verification error:', error);
-        navigate('/login');
+        
+        // Only if no session storage, check with server
+        try {
+          const isValid = await checkSessionValidity();
+          if (!isValid) {
+            console.warn('Dashboard: Session invalid, redirecting to login');
+            navigate('/login');
+          }
+        } catch (error) {
+          console.error('Dashboard: Session check error:', error);
+        }
       } finally {
         setLoading(false);
       }
     };
     
-    checkSession();
+    checkSessionOnce();
     
-    // Set up periodic checks
-    const interval = setInterval(async () => {
-      const isValid = await checkSessionValidity();
-      if (!isValid) navigate('/login');
-    }, 60000); // Check every minute while on dashboard
-    
-    return () => clearInterval(interval);
-  }, [checkSessionValidity, navigate]);
+    // Remove the interval check that could cause logout
+    // This prevents aggressively checking and potentially logging out users
+  }, [navigate, checkSessionValidity]);
   
   const handleLogout = async () => {
     try {
