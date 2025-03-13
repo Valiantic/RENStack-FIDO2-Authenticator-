@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Routes, Route, Navigate, BrowserRouter, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './components/Login';
@@ -37,16 +37,30 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
-// Public route component (redirects to dashboard if already authenticated)
+// Enhanced public route component that ensures authenticated users are redirected
 const PublicRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
+  const navigate = useNavigate();
+  
+  useEffect(() => {
+    // Check for authentication in session storage as a fallback
+    const hasStoredAuth = sessionStorage.getItem('authenticatedUser') !== null;
+    
+    // If user is authenticated but still on public route, redirect them
+    if ((isAuthenticated || hasStoredAuth) && !loading) {
+      console.log('User is already authenticated, redirecting from public route to dashboard');
+      navigate('/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, loading, navigate]);
   
   if (loading) {
-    return <div>Loading...</div>;
+    return <div className="flex justify-center items-center h-screen">
+      <div className="text-xl">Loading...</div>
+    </div>;
   }
   
   if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />;
+    return null; // Return nothing while redirect happens
   }
   
   return children;

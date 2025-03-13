@@ -64,48 +64,46 @@ const Register = () => {
 
             // Check for success in both old and new response formats
             if (finalizeRes.status === 'ok' || finalizeRes.success === true) {
-                setMessage('Registration successful! Verifying passkey...');
+                setMessage('Registration successful! Redirecting to dashboard...');
                 
-                // Use credentialId from response if available, otherwise from our credential response
-                const credId = finalizeRes.credentialId || credentialResponse.id;
+                // Use the user object from the response
+                const userData = finalizeRes.user || {
+                    username: username,
+                    displayName: displayName
+                };
                 
-                // New step: Verify the registration
-                try {
-                    const verificationResult = await verifyRegistration(
-                        credId, 
-                        username
-                    );
+                // Pass user data to the context
+                register(userData);
+
+                // Show clearer success message with countdown
+                let countdown = 3;
+                setMessage(`Registration successful! Redirecting in ${countdown} seconds...`);
+                
+                const countdownInterval = setInterval(() => {
+                    countdown -= 1;
+                    setMessage(`Registration successful! Redirecting in ${countdown} seconds...`);
                     
-                    if (verificationResult.status === 'ok' || verificationResult.success === true) {
-                        setMessage('Registration and verification successful!');
+                    if (countdown <= 0) {
+                        clearInterval(countdownInterval);
                         
-                        // Use the user object from the verification response
-                        const userData = verificationResult.user || {
-                            username: username,
-                            displayName: displayName
-                        };
+                        // Multiple navigation methods to ensure redirection works
+                        console.log('Redirecting to dashboard after registration');
                         
-                        // Pass user data to the context
-                        register(userData);
-                        navigate('/dashboard');
-                    } else {
-                        throw new Error('Verification failed: ' + (verificationResult.message || 'Unknown error'));
+                        // First try the React Router navigation
+                        navigate('/dashboard', { replace: true });
+                        
+                        // After a short delay, try direct location change as fallback
+                        setTimeout(() => {
+                            window.location.href = '/dashboard';
+                        }, 500);
                     }
-                } catch (verifyError) {
-                    console.error('Verification error:', verifyError);
-                    
-                    // Fall back to just registration if verification fails
-                    setMessage('Registration successful! (Verification step skipped)');
-                    
-                    // Use the user object directly
-                    const userData = finalizeRes.user || {
-                        username: username,
-                        displayName: displayName
-                    };
-                    
-                    register(userData);
-                    navigate('/dashboard');
-                }
+                }, 1000);
+                
+                // Add manual navigation button
+                setTimeout(() => {
+                    setMessage('Registration successful! Click below if not redirected automatically.');
+                    document.getElementById('manual-redirect')?.classList.remove('hidden');
+                }, 4000);
             } else {
                 throw new Error('Registration failed: The operation either timed out or returned invalid data');
             }
@@ -139,6 +137,10 @@ const Register = () => {
         setIsRegistering(false);
     }
   }
+
+  const handleManualRedirect = () => {
+    window.location.href = '/dashboard';
+  };
 
   return (
     <div className="max-w-md mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 m-4">
@@ -184,6 +186,16 @@ const Register = () => {
         </div>
       )}
       
+      {message && message.includes('successful') && (
+        <button 
+            id="manual-redirect"
+            onClick={handleManualRedirect}
+            className="hidden mt-4 mx-auto block bg-blue-500 hover:bg-blue-600 text-white py-2 px-6 rounded"
+        >
+            Continue to Dashboard
+        </button>
+      )}
+
       <p className="mt-6 text-center text-gray-600 dark:text-gray-400">
         <a href="/login" className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
           Already registered? Login here
