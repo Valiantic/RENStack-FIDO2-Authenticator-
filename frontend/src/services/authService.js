@@ -297,38 +297,72 @@ export const createCredential = async (credentialOptions) => {
 };
 
 export const getCredential = async (assertionOptions) => {
-  // Ensure challenge is a string before conversion
-  const challenge = assertionOptions.challenge.toString();
-  assertionOptions.challenge = base64URLToBuffer(challenge);
-  
-  // Convert allowed credentials to ArrayBuffer if they exist
-  if (assertionOptions.allowCredentials) {
-    assertionOptions.allowCredentials = assertionOptions.allowCredentials.map(credential => ({
-      id: base64URLToBuffer(credential.id.toString()),
-      type: 'public-key'
-    }));
-  }
-
-  // Get the RP ID from environment or hostname
-  const rpId = getRpId();
-  
-  // Ensure rpId is set correctly
-  assertionOptions.rpId = rpId;
-
-  // Get credential from authenticator
-  const credential = await navigator.credentials.get({
-    publicKey: assertionOptions
-  });
-
-  // Format credential for transmission
-  return {
-    id: arrayBufferToBase64URL(credential.rawId),
-    rawId: arrayBufferToBase64URL(credential.rawId),
-    type: credential.type,
-    response: {
-      authenticatorData: arrayBufferToBase64URL(credential.response.authenticatorData),
-      clientDataJSON: arrayBufferToBase64URL(credential.response.clientDataJSON),
-      signature: arrayBufferToBase64URL(credential.response.signature),
+  try {
+    console.log('Requesting credential from authenticator with options:', {
+      rpId: assertionOptions.rpId,
+      challenge: assertionOptions.challenge.substring(0, 10) + '...',
+      allowCredentials: assertionOptions.allowCredentials?.length || 0
+    });
+    
+    // Ensure challenge is a string before conversion
+    const challenge = assertionOptions.challenge.toString();
+    assertionOptions.challenge = base64URLToBuffer(challenge);
+    
+    // Convert allowed credentials to ArrayBuffer if they exist
+    if (assertionOptions.allowCredentials) {
+      assertionOptions.allowCredentials = assertionOptions.allowCredentials.map(credential => ({
+        id: base64URLToBuffer(credential.id.toString()),
+        type: 'public-key',
+        transports: credential.transports || ['internal', 'hybrid', 'usb', 'ble', 'nfc']
+      }));
     }
-  };
+
+    // Get the RP ID from environment or hostname
+    const rpId = getRpId();
+    
+    // Ensure rpId is set correctly
+    assertionOptions.rpId = rpId;
+    
+    console.log('Calling navigator.credentials.get()...');
+    
+    // Get credential from authenticator with improved error handling
+    try {
+      const credential = await navigator.credentials.get({
+        publicKey: assertionOptions,
+        mediation: 'optional'
+      });
+      
+      console.log('Received credential from authenticator:', credential ? 'success' : 'null');
+      
+      if (!credential) {
+        throw new Error('No credential returned from authenticator');
+      }
+
+      // Format credential for transmission
+      return {
+        id: arrayBufferToBase64URL(credential.rawId),
+        rawId: arrayBufferToBase64URL(credential.rawId),
+        type: credential.type,
+        response: {
+          authenticatorData: arrayBufferToBase64URL(credential.response.authenticatorData),
+          clientDataJSON: arrayBufferToBase64URL(credential.response.clientDataJSON),
+          signature: arrayBufferToBase64URL(credential.response.signature),
+        }
+      };
+    } catch (webAuthnError) {
+      console.error('WebAuthn API error:', webAuthnError);
+      
+      // Provide more user-friendly error messages based on the error
+      if (webAuthnError.name === 'NotAllowedError') {
+        throw new Error('Authentication was rejected by the user or device');
+      } else if (webAuthnError.name === 'SecurityError') {
+        throw new Error('The operation is insecure (not allowed in this context)');
+      } else {
+        throw webAuthnError;
+      }
+    }
+  } catch (error) {
+    console.error('Get credential error:', error);
+    throw error;
+  }
 };

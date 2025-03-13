@@ -1,18 +1,15 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { verifySession, logoutUser } from '../services/authService';
-import { useNavigate } from 'react-router-dom';
 
 const AuthContext = createContext(null);
 
-// Wrapper component that has access to navigation
-const AuthProviderWithNavigation = ({ children }) => {
-  const navigate = useNavigate();
-  
+// Remove the navigation wrapper - we'll handle navigation in components instead
+export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
 
-  // Logout function that can navigate
+  // Logout function without navigation
   const logout = useCallback(async () => {
     try {
       console.log('Logging out...');
@@ -26,35 +23,39 @@ const AuthProviderWithNavigation = ({ children }) => {
       // Update state
       setCurrentUser(null);
       
-      console.log('Logout successful, redirecting to login');
-      navigate('/login');
+      console.log('Logout successful');
+      // Navigation will be handled by the component that calls this function
     } catch (error) {
       console.error('Logout error:', error);
       // Still clear local user data even if server logout fails
       setCurrentUser(null);
       sessionStorage.removeItem('authenticatedUser');
-      navigate('/login');
     }
-  }, [navigate]);
+  }, []);
 
-  // Check session and redirect if needed
+  // Check session (without redirection)
   const checkSessionValidity = useCallback(async () => {
-    if (!currentUser) return;
+    if (!currentUser) return false;
     
     try {
       console.log('Verifying session validity...');
       const result = await verifySession();
       
       if (!result.authenticated) {
-        console.log('Session expired or invalid, logging out');
-        await logout();
+        console.log('Session expired or invalid');
+        // Clear authentication state
+        sessionStorage.removeItem('authenticatedUser');
+        setCurrentUser(null);
+        return false;
       } else {
         console.log('Session is valid');
+        return true;
       }
     } catch (error) {
       console.error('Session check error:', error);
+      return false;
     }
-  }, [currentUser, logout]);
+  }, [currentUser]);
 
   // Login function called after successful authentication
   const login = useCallback((userData) => {
@@ -156,7 +157,7 @@ const AuthProviderWithNavigation = ({ children }) => {
     // Set up periodic session checks
     const sessionCheckInterval = setInterval(() => {
       if (currentUser) {
-        checkSessionValidity();
+        checkSessionValidity(); // Note: this doesn't redirect anymore
       }
     }, 5 * 60 * 1000); // Check every 5 minutes
     
@@ -172,15 +173,10 @@ const AuthProviderWithNavigation = ({ children }) => {
     register,
     logout,
     isAuthenticated: !!currentUser,
-    checkSessionValidity // Export this so components can trigger a manual check
+    checkSessionValidity // Export so components can trigger a manual check & handle redirection
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-};
-
-// Main Provider component
-export const AuthProvider = ({ children }) => {
-  return <AuthProviderWithNavigation>{children}</AuthProviderWithNavigation>;
 };
 
 export const useAuth = () => {

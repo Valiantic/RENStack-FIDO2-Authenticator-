@@ -4,44 +4,49 @@ import { useAuth } from '../context/AuthContext';
 import { verifySession, logoutUser } from '../services/authService';
 
 const Dashboard = () => {
-  const { currentUser, logout } = useAuth();
+  const { currentUser, logout, checkSessionValidity } = useAuth();
   const navigate = useNavigate();
-  const [sessionInfo, setSessionInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   
   // Verify session when component mounts
   useEffect(() => {
-    const checkSessionOnLoad = async () => {
+    const checkSession = async () => {
       try {
         setLoading(true);
         console.log('Dashboard: Verifying session...');
-        const result = await verifySession();
         
-        if (result.authenticated) {
-          console.log('Dashboard: Session is valid');
-          setSessionInfo(result);
-        } else {
+        const isValid = await checkSessionValidity();
+        if (!isValid) {
           console.warn('Dashboard: Session is invalid, redirecting to login');
-          logout();
           navigate('/login');
         }
       } catch (error) {
         console.error('Dashboard: Session verification error:', error);
+        navigate('/login');
       } finally {
         setLoading(false);
       }
     };
     
-    checkSessionOnLoad();
-  }, [navigate, logout]);
+    checkSession();
+    
+    // Set up periodic checks
+    const interval = setInterval(async () => {
+      const isValid = await checkSessionValidity();
+      if (!isValid) navigate('/login');
+    }, 60000); // Check every minute while on dashboard
+    
+    return () => clearInterval(interval);
+  }, [checkSessionValidity, navigate]);
   
   const handleLogout = async () => {
     try {
-      await logoutUser();
-      logout(); // update local auth state
+      await logout();
       navigate('/login');
     } catch (error) {
       console.error('Logout error:', error);
+      // Force navigation even if logout fails
+      navigate('/login');
     }
   };
   

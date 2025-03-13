@@ -1,10 +1,10 @@
 import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, BrowserRouter } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './components/Login';
 import Register from './components/Register';
 import Dashboard from './components/Dashboard';
-import NotFound from './components/NotFound';
+
 
 // Protected route component
 const ProtectedRoute = ({ children }) => {
@@ -39,7 +39,7 @@ const PublicRoute = ({ children }) => {
   return children;
 };
 
-function AppContent() {
+function AppRoutes() {
   const { loading } = useAuth();
   
   if (loading) {
@@ -50,7 +50,6 @@ function AppContent() {
   
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-      {/* SessionPersistence component removed - functionality now in AuthContext */}
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={
@@ -68,7 +67,6 @@ function AppContent() {
             <Dashboard />
           </ProtectedRoute>
         } />
-        <Route path="*" element={<NotFound />} />
       </Routes>
     </div>
   );
@@ -76,9 +74,11 @@ function AppContent() {
 
 function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
 
