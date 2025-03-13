@@ -75,18 +75,26 @@ const Register = () => {
                 
                 console.log('Registration successful! User data:', userData);
                 
-                // CRITICAL FIX #1: Store authenticated user in session storage FIRST
+                // Store auth data first, before any navigation attempts
+                localStorage.setItem('authInProgress', 'true');
                 sessionStorage.setItem('authenticatedUser', JSON.stringify(userData));
-                localStorage.setItem('authenticated', 'true');
                 
-                // CRITICAL FIX #2: Use a direct URL change instead of Router navigation
-                // Add timestamp to force a complete reload and skip routing issues
-                setTimeout(() => {
-                  window.location.href = `/dashboard?auth=1&t=${Date.now()}`;
-                }, 300);
-                
-                // Only then update the React context (might not finish before redirect)
+                // Update context state
                 register(userData);
+                
+                // CRITICAL FIX: Add deliberate delay before navigation
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Try React Router navigation first with replace option
+                navigate('/dashboard', { replace: true });
+                
+                // Only use fallback if navigation fails
+                setTimeout(() => {
+                  if (window.location.pathname !== '/dashboard') {
+                    console.log('Fallback: forcing navigation to dashboard');
+                    window.location.href = '/dashboard';
+                  }
+                }, 1000);
             } else {
                 throw new Error('Registration failed: The operation either timed out or returned invalid data');
             }

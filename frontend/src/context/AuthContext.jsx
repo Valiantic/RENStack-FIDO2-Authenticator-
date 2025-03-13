@@ -93,56 +93,46 @@ export const AuthProvider = ({ children }) => {
   // More reliable initial auth check that prioritizes session storage
   useEffect(() => {
     const checkAuth = async () => {
+      console.log('AuthContext: Initial auth check');
+      
+      // Try to get user from sessionStorage first
       try {
-        console.log('Checking authentication status...');
-        
-        // CRITICAL FIX: Always try session storage first, and TRUST IT
         const storedUser = sessionStorage.getItem('authenticatedUser');
         if (storedUser) {
-          try {
-            const userData = JSON.parse(storedUser);
-            console.log('Found authenticated user in session storage:', userData);
-            
-            // Trust session storage - set user immediately
-            setCurrentUser(userData);
-            
-            // Optionally verify with server but don't override session storage
-            try {
-              await verifySession();
-            } catch (verifyError) {
-              console.warn('Server session check failed, but keeping local session', verifyError.message);
-              // Continue using session storage auth state regardless
-            }
-          } catch (parseError) {
-            console.error('Failed to parse stored user data:', parseError);
-            // Only clear if we can't parse
-            sessionStorage.removeItem('authenticatedUser');
-            setCurrentUser(null);
-          }
-        } else {
-          console.log('No user data in session storage, checking with server');
-          // No local data, check with server
-          try {
-            const result = await verifySession();
-            if (result.authenticated && result.user) {
-              console.log('Server says user is authenticated:', result.user);
-              setCurrentUser(result.user);
-              sessionStorage.setItem('authenticatedUser', JSON.stringify(result.user));
-            } else {
-              console.log('User is not authenticated');
-              setCurrentUser(null);
-            }
-          } catch (serverError) {
-            console.error('Server auth check error:', serverError);
-            setCurrentUser(null);
-          }
+          const userData = JSON.parse(storedUser);
+          console.log('AuthContext: Found user in sessionStorage', userData);
+          setCurrentUser(userData);
+          setLoading(false);
+          setAuthChecked(true);
+          return;
         }
-      } finally {
-        setLoading(false);
-        setAuthChecked(true);
+      } catch (e) {
+        console.error('AuthContext: Error reading sessionStorage', e);
       }
+      
+      // No sessionStorage user, try server check
+      try {
+        console.log('AuthContext: Checking with server');
+        const result = await verifySession();
+        
+        if (result.authenticated && result.user) {
+          console.log('AuthContext: Server authenticated user', result.user);
+          setCurrentUser(result.user);
+          // Save to sessionStorage for future checks
+          sessionStorage.setItem('authenticatedUser', JSON.stringify(result.user));
+        } else {
+          console.log('AuthContext: Server says not authenticated');
+          setCurrentUser(null);
+        }
+      } catch (err) {
+        console.error('AuthContext: Server check failed', err);
+        setCurrentUser(null);
+      }
+      
+      setLoading(false);
+      setAuthChecked(true);
     };
-
+    
     checkAuth();
   }, []);
   

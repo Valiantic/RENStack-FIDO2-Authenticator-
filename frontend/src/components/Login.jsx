@@ -81,21 +81,30 @@ const Login = () => {
           displayName: verificationRes.user?.displayName || username
         };
         
-        // CRITICAL FIX: Store auth in sessionStorage FIRST
+        // Better storage logic - set both auth flags first
+        localStorage.setItem('authInProgress', 'true');
         sessionStorage.setItem('authenticatedUser', JSON.stringify(userData));
-        localStorage.setItem('authenticated', 'true');
         
-        // Set context state (might not finish before redirect)
+        // IMPORTANT: Update context state and wait for it to finish
         login(userData);
         
-        // Visual indicator of success
+        // Show success message
         setMessage('Login successful! Redirecting to dashboard...');
         setAuthSuccess(true);
         
-        // CRITICAL FIX: Use direct URL change with forced reload
+        // Key fix: Add a deliberate delay to ensure session state is fully established
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Instead of using location.href, try navigate with replace option
+        navigate('/dashboard', { replace: true });
+        
+        // Fallback only if navigate fails for some reason
         setTimeout(() => {
-          window.location.href = `/dashboard?auth=1&t=${Date.now()}`;
-        }, 300);
+          if (window.location.pathname !== '/dashboard') {
+            console.log('Fallback: forcing navigation to dashboard');
+            window.location.href = '/dashboard';
+          }
+        }, 1000);
       } else {
         throw new Error(verificationRes.message || 'Login failed');
       }

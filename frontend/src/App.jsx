@@ -1,38 +1,68 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Routes, Route, Navigate, BrowserRouter, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './components/Login';
 import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 
-// Fixed ProtectedRoute that guarantees access to dashboard when authenticated
+// Fixed ProtectedRoute with more reliable auth checking
 const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, currentUser } = useAuth();
+  const navigate = useNavigate();
+  const [localLoading, setLocalLoading] = useState(true);
   
-  // Critical check: explicitly look for session storage auth data
-  const isAuthedInStorage = () => {
-    try {
-      return !!sessionStorage.getItem('authenticatedUser');
-    } catch (e) {
-      return false;
+  // More reliable auth check function
+  const checkAuthentication = useCallback(() => {
+    // First check context
+    if (isAuthenticated && currentUser) {
+      console.log('ProtectedRoute: Authenticated via context');
+      return true;
     }
-  };
+    
+    // Then check sessionStorage as backup
+    try {
+      const storedUser = sessionStorage.getItem('authenticatedUser');
+      if (storedUser) {
+        console.log('ProtectedRoute: Authenticated via sessionStorage');
+        return true;
+      }
+    } catch (e) {
+      console.error('ProtectedRoute: Error reading sessionStorage', e);
+    }
+    
+    // Also check if auth is in progress (set by Login/Register)
+    if (localStorage.getItem('authInProgress') === 'true') {
+      console.log('ProtectedRoute: Auth in progress flag found');
+      return true;
+    }
+    
+    console.log('ProtectedRoute: Not authenticated');
+    return false;
+  }, [isAuthenticated, currentUser]);
   
-  // Show loading during auth check
-  if (loading) {
+  // Effect to handle auth check
+  useEffect(() => {
+    if (!loading) {
+      const isAuthed = checkAuthentication();
+      
+      if (!isAuthed) {
+        console.log('ProtectedRoute: Not authenticated, redirecting to login');
+        navigate('/login', { replace: true });
+      }
+      
+      // Clear loading state
+      setLocalLoading(false);
+    }
+  }, [loading, checkAuthentication, navigate]);
+  
+  // Show loading screen during authentication check
+  if (loading || localLoading) {
     return <div className="flex justify-center items-center h-screen">
       <div className="text-xl">Loading dashboard...</div>
     </div>;
   }
   
-  // THIS IS THE KEY FIX: Only redirect if BOTH checks fail
-  if (!isAuthenticated && !isAuthedInStorage()) {
-    console.log('Not authenticated by any method, redirecting to login');
-    return <Navigate to="/login" replace />;
-  }
-  
-  // If we get here, user is authenticated (by either context or storage)
-  console.log('User is authenticated, showing dashboard');
+  // If we got here, we're authenticated
   return children;
 };
 

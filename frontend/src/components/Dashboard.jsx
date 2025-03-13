@@ -9,74 +9,63 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   
-  // Debug when dashboard first loads
+  // Effect to ensure we have user data
   useEffect(() => {
     console.log('Dashboard mounted');
-    const authState = checkCurrentAuthState();
-    console.log('Dashboard auth state:', authState);
     
-    // Mark that we've seen the dashboard
-    localStorage.setItem('dashboard_visited', 'true');
+    // First clear the auth-in-progress flag if it exists
+    localStorage.removeItem('authInProgress');
     
-    // If authenticated via session storage but not in context
-    if (authState.sessionStorage && !currentUser) {
-      console.log('Found auth in session storage but not in context');
-      
-      // This indicates a potential auth state mismatch
-      try {
-        const userData = JSON.parse(sessionStorage.getItem('authenticatedUser'));
-        console.log('User data from session storage:', userData);
-        // We could potentially force reload here
-      } catch (e) {
-        console.error('Failed to parse session storage:', e);
+    // Function to get user data from various sources
+    const getUserData = () => {
+      // First try context
+      if (currentUser) {
+        console.log('Dashboard: Using user data from context');
+        return currentUser;
       }
-    }
-  }, [currentUser]);
-
-  // Modify the session verification to be less aggressive
-  useEffect(() => {
-    const checkSessionOnce = async () => {
+      
+      // Then try session storage
       try {
-        setLoading(true);
-        console.log('Dashboard: Initial session verification');
-        
-        // CRITICAL FIX: Check session storage first before server check
         const storedUser = sessionStorage.getItem('authenticatedUser');
         if (storedUser) {
-          console.log('Dashboard: Found authenticated user in session storage');
-          setLoading(false);
-          return; // Skip server verification if we have local auth
+          const userData = JSON.parse(storedUser);
+          console.log('Dashboard: Using user data from sessionStorage');
+          return userData;
         }
-        
-        // Only if no session storage, check with server
-        try {
-          const isValid = await checkSessionValidity();
-          if (!isValid) {
-            console.warn('Dashboard: Session invalid, redirecting to login');
-            navigate('/login');
-          }
-        } catch (error) {
-          console.error('Dashboard: Session check error:', error);
-        }
-      } finally {
-        setLoading(false);
+      } catch (e) {
+        console.error('Dashboard: Error reading from sessionStorage', e);
       }
+      
+      return null;
     };
     
-    checkSessionOnce();
+    const userData = getUserData();
+    setLoading(false);
     
-    // Remove the interval check that could cause logout
-    // This prevents aggressively checking and potentially logging out users
-  }, [navigate, checkSessionValidity]);
+    // Only check session with server if we have user data
+    if (userData) {
+      // Check once but don't redirect automatically
+      checkSessionValidity().catch(err => {
+        console.warn('Dashboard: Non-critical session check error', err);
+      });
+    }
+  }, [currentUser, checkSessionValidity]);
   
+  // Logout handler
   const handleLogout = async () => {
     try {
+      // Clear all auth data first
+      sessionStorage.removeItem('authenticatedUser');
+      localStorage.removeItem('authInProgress');
+      
+      // Then call logout
       await logout();
-      navigate('/login');
+      
+      // Navigate after logout
+      navigate('/login', { replace: true });
     } catch (error) {
       console.error('Logout error:', error);
-      // Force navigation even if logout fails
-      navigate('/login');
+      navigate('/login', { replace: true });
     }
   };
   
