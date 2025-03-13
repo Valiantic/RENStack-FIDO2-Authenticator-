@@ -16,38 +16,39 @@ const Dashboard = () => {
     // First clear the auth-in-progress flag if it exists
     localStorage.removeItem('authInProgress');
     
-    // Function to get user data from various sources
-    const getUserData = () => {
-      // First try context
-      if (currentUser) {
-        console.log('Dashboard: Using user data from context');
-        return currentUser;
-      }
-      
+    // Get user data from various sources
+    let userData = null;
+    
+    // First check context
+    if (currentUser) {
+      console.log('Dashboard: Using user data from context');
+      userData = currentUser;
+    } else {
       // Then try session storage
       try {
         const storedUser = sessionStorage.getItem('authenticatedUser');
         if (storedUser) {
-          const userData = JSON.parse(storedUser);
+          userData = JSON.parse(storedUser);
           console.log('Dashboard: Using user data from sessionStorage');
-          return userData;
         }
       } catch (e) {
         console.error('Dashboard: Error reading from sessionStorage', e);
       }
-      
-      return null;
-    };
+    }
     
-    const userData = getUserData();
-    setLoading(false);
-    
-    // Only check session with server if we have user data
     if (userData) {
-      // Check once but don't redirect automatically
-      checkSessionValidity().catch(err => {
-        console.warn('Dashboard: Non-critical session check error', err);
-      });
+      setLoading(false);
+      
+      // Wait before checking session with server
+      setTimeout(() => {
+        checkSessionValidity().catch(err => {
+          // Log but DON'T redirect on failure - trust local auth
+          console.warn('Session check failed, but keeping user on dashboard:', err.message);
+        });
+      }, 2000); // 2 seconds delay
+    } else {
+      console.log('Dashboard: No user data found in any source');
+      setLoading(false);
     }
   }, [currentUser, checkSessionValidity]);
   

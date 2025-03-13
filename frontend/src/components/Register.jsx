@@ -76,8 +76,8 @@ const Register = () => {
                 console.log('Registration successful! User data:', userData);
                 
                 // Store auth data first, before any navigation attempts
-                localStorage.setItem('authInProgress', 'true');
                 sessionStorage.setItem('authenticatedUser', JSON.stringify(userData));
+                localStorage.setItem('authInProgress', 'true');
                 
                 // Update context state
                 register(userData);

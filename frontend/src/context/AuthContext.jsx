@@ -90,68 +90,81 @@ export const AuthProvider = ({ children }) => {
     login(userData);
   }, [login]);
 
-  // More reliable initial auth check that prioritizes session storage
+  // Fix the initial auth check to avoid immediate server check if session storage exists
   useEffect(() => {
     const checkAuth = async () => {
-      console.log('AuthContext: Initial auth check');
-      
-      // Try to get user from sessionStorage first
       try {
+        console.log('AuthContext: Initial auth check');
+        
+        // First try sessionStorage - trust it completely if found
         const storedUser = sessionStorage.getItem('authenticatedUser');
         if (storedUser) {
-          const userData = JSON.parse(storedUser);
-          console.log('AuthContext: Found user in sessionStorage', userData);
-          setCurrentUser(userData);
-          setLoading(false);
-          setAuthChecked(true);
-          return;
-        }
-      } catch (e) {
-        console.error('AuthContext: Error reading sessionStorage', e);
-      }
-      
-      // No sessionStorage user, try server check
-      try {
-        console.log('AuthContext: Checking with server');
-        const result = await verifySession();
-        
-        if (result.authenticated && result.user) {
-          console.log('AuthContext: Server authenticated user', result.user);
-          setCurrentUser(result.user);
-          // Save to sessionStorage for future checks
-          sessionStorage.setItem('authenticatedUser', JSON.stringify(result.user));
+          try {
+            const userData = JSON.parse(storedUser);
+            console.log('AuthContext: Found user in sessionStorage - trusting local data');
+            
+            // Set the user state from local data and finish immediately
+            // IMPORTANT: Do NOT verify with server immediately after login/register
+            setCurrentUser(userData);
+            setLoading(false);
+            setAuthChecked(true);
+            return;
+          } catch (e) {
+            console.error('Error parsing userData from sessionStorage:', e);
+            sessionStorage.removeItem('authenticatedUser');
+          }
         } else {
-          console.log('AuthContext: Server says not authenticated');
+          console.log('AuthContext: No user found in sessionStorage');
+        }
+        
+        // Only check with server if no local data exists
+        try {
+          console.log('AuthContext: Checking with server (no local data)');
+          const result = await verifySession();
+          
+          if (result.authenticated && result.user) {
+            console.log('AuthContext: Server authenticated user', result.user);
+            setCurrentUser(result.user);
+            sessionStorage.setItem('authenticatedUser', JSON.stringify(result.user));
+          } else {
+            console.log('AuthContext: Server says not authenticated');
+            setCurrentUser(null);
+          }
+        } catch (err) {
+          console.error('AuthContext: Server check failed', err);
           setCurrentUser(null);
         }
-      } catch (err) {
-        console.error('AuthContext: Server check failed', err);
-        setCurrentUser(null);
+      } finally {
+        setLoading(false);
+        setAuthChecked(true);
       }
-      
-      setLoading(false);
-      setAuthChecked(true);
     };
     
     checkAuth();
   }, []);
   
-  // Session persistence effect - replaces SessionPersistence component
+  // Remove or modify periodic session checks to avoid disrupting the user experience
   useEffect(() => {
-    // Check session validity on initial load if user is logged in
     if (currentUser) {
-      checkSessionValidity();
+      // Add delay before first check to allow session to establish
+      const initialCheckTimer = setTimeout(() => {
+        checkSessionValidity().catch(err => {
+          console.warn('Session validity check failed (non-critical):', err);
+        });
+      }, 5000); // 5 seconds after auth
+      
+      // Periodic checks only AFTER the initial delay
+      const intervalTimer = setInterval(() => {
+        checkSessionValidity().catch(err => {
+          console.warn('Periodic session check failed (non-critical):', err);
+        });
+      }, 5 * 60 * 1000); // Every 5 minutes
+      
+      return () => {
+        clearTimeout(initialCheckTimer);
+        clearInterval(intervalTimer);
+      };
     }
-    
-    // Set up periodic session checks
-    const sessionCheckInterval = setInterval(() => {
-      if (currentUser) {
-        checkSessionValidity(); // Note: this doesn't redirect anymore
-      }
-    }, 5 * 60 * 1000); // Check every 5 minutes
-    
-    // Cleanup interval on unmount
-    return () => clearInterval(sessionCheckInterval);
   }, [currentUser, checkSessionValidity]);
 
   // Check for pending redirects in session storage on auth state change

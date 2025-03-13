@@ -5,64 +5,70 @@ import Login from './components/Login';
 import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 
-// Fixed ProtectedRoute with more reliable auth checking
+// Fixed ProtectedRoute with delay before server verification
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading, currentUser } = useAuth();
   const navigate = useNavigate();
   const [localLoading, setLocalLoading] = useState(true);
+  const [serverCheckComplete, setServerCheckComplete] = useState(false);
   
-  // More reliable auth check function
-  const checkAuthentication = useCallback(() => {
-    // First check context
-    if (isAuthenticated && currentUser) {
-      console.log('ProtectedRoute: Authenticated via context');
-      return true;
-    }
-    
-    // Then check sessionStorage as backup
+  // Check auth state from sessionStorage
+  const checkSessionStorage = useCallback(() => {
     try {
       const storedUser = sessionStorage.getItem('authenticatedUser');
       if (storedUser) {
-        console.log('ProtectedRoute: Authenticated via sessionStorage');
+        console.log('ProtectedRoute: Found auth in sessionStorage');
         return true;
       }
     } catch (e) {
-      console.error('ProtectedRoute: Error reading sessionStorage', e);
+      console.error('Error reading sessionStorage:', e);
     }
-    
-    // Also check if auth is in progress (set by Login/Register)
-    if (localStorage.getItem('authInProgress') === 'true') {
-      console.log('ProtectedRoute: Auth in progress flag found');
-      return true;
-    }
-    
-    console.log('ProtectedRoute: Not authenticated');
     return false;
-  }, [isAuthenticated, currentUser]);
+  }, []);
   
-  // Effect to handle auth check
+  // First effect to handle initial auth check from local storage only
   useEffect(() => {
     if (!loading) {
-      const isAuthed = checkAuthentication();
+      // CRITICAL: First check is only from local sources (no server check)
+      const isLocallyAuthenticated = isAuthenticated || checkSessionStorage();
       
-      if (!isAuthed) {
-        console.log('ProtectedRoute: Not authenticated, redirecting to login');
+      if (!isLocallyAuthenticated) {
+        console.log('ProtectedRoute: No local authentication found, redirecting to login');
         navigate('/login', { replace: true });
+      } else {
+        console.log('ProtectedRoute: Local authentication found, allowing access');
+        setLocalLoading(false);
       }
-      
-      // Clear loading state
-      setLocalLoading(false);
     }
-  }, [loading, checkAuthentication, navigate]);
+  }, [loading, isAuthenticated, navigate, checkSessionStorage]);
   
-  // Show loading screen during authentication check
+  // Second effect to verify with server AFTER a delay (don't redirect on failure)
+  useEffect(() => {
+    if (!loading && !localLoading && isAuthenticated) {
+      // Give the server time to establish the session before checking
+      const serverCheckTimer = setTimeout(async () => {
+        try {
+          // This is only for verification, not for redirecting
+          console.log('ProtectedRoute: Verifying session with server after delay');
+          const { checkSessionValidity } = useAuth();
+          await checkSessionValidity();
+        } catch (error) {
+          console.warn('Server verification error (non-blocking):', error);
+        } finally {
+          setServerCheckComplete(true);
+        }
+      }, 1000); // 1 second delay before server check
+      
+      return () => clearTimeout(serverCheckTimer);
+    }
+  }, [loading, localLoading, isAuthenticated]);
+  
   if (loading || localLoading) {
     return <div className="flex justify-center items-center h-screen">
       <div className="text-xl">Loading dashboard...</div>
     </div>;
   }
   
-  // If we got here, we're authenticated
   return children;
 };
 
