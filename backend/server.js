@@ -114,8 +114,27 @@ app.use((req, res, next) => {
 // Add OPTIONS handling
 app.options('*', cors());
 
+// Add explicit verification for route mounting
+console.log('=== Mounting Routes ===');
+
 // Mount routes
 app.use('/auth', authRoutes);
+console.log('Auth routes mounted at /auth');
+
+// Additional route to verify the auth router is properly mounted
+app.get('/check-auth-routes', (req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'Auth routes are properly mounted',
+    routes: {
+      register: '/auth/register',
+      registerResponse: '/auth/register/response',
+      login: '/auth/login',
+      loginResponse: '/auth/login/response',
+      logout: '/auth/logout'
+    }
+  });
+});
 
 // Basic test route
 app.get('/', (req, res) => {

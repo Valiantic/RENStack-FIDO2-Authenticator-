@@ -147,13 +147,52 @@ router.post('/store-challenge', async (req, res) => {
 //  Complete Registration: verify attestation response
 router.post('/register/response', methodCheck, async (req, res) => {
   try {
-    console.log('Received registration response');
+    console.log('==== REGISTRATION RESPONSE RECEIVED ====');
+    console.log('Request body structure:', Object.keys(req.body));
+    
+    // Support both credential object format and direct format
+    const { credential } = req.body;
+    let rawId, type, response;
+    
+    if (credential) {
+      // Handle new format where credential is passed as an object
+      console.log('Credential object format detected');
+      rawId = credential.rawId;
+      type = credential.type;
+      response = credential.response;
+    } else {
+      // Handle existing format where properties are at the root level
+      console.log('Direct credential format detected');
+      rawId = req.body.rawId;
+      type = req.body.type;
+      response = req.body.response;
+    }
+    
+    console.log('Session data:', JSON.stringify({
+      hasChallenge: !!req.session?.challenge,
+      username: req.session?.username,
+      displayName: req.session?.displayName,
+      sessionID: req.sessionID
+    }, null, 2));
     
     if (!req.session?.challenge) {
-      throw new Error('No challenge found in session');
+      console.error('No challenge found in session - registration will fail');
+      return res.status(400).json({
+        success: false,
+        message: "Registration failed",
+        error: 'No challenge found in session. Please restart the registration process.'
+      });
     }
 
-    const { rawId, type, response } = req.body;
+    // Validate credential data
+    if (!rawId || !type || !response || !response.attestationObject || !response.clientDataJSON) {
+      console.error('Invalid credential structure:', { rawId, type, response });
+      return res.status(400).json({
+        success: false,
+        message: "Registration failed",
+        error: 'Invalid credential format. Missing required fields.'
+      });
+    }
 
     // Create the attestation response with proper ArrayBuffer format
     const attestationResponse = {
@@ -171,12 +210,7 @@ router.post('/register/response', methodCheck, async (req, res) => {
     const origin = getOrigin();
     const rpId = getRpId();
 
-    console.log('Verifying with parameters:', {
-      challenge: req.session.challenge,
-      origin: origin,
-      rpId: rpId
-    });
-
+    console.log('Verifying attestation with FIDO2-lib...');
     const attestationResult = await fido2.attestationResult(
       attestationResponse,
       {
@@ -186,10 +220,16 @@ router.post('/register/response', methodCheck, async (req, res) => {
         rpId: rpId
       }
     );
+    
+    console.log('Attestation verified successfully');
 
     // Save user and credential
     const username = req.session.username;
     const displayName = req.session.displayName;
+    
+    if (!username || !displayName) {
+      throw new Error('User data missing from session');
+    }
 
     let user = await User.findOne({ where: { username } });
     if (!user) {
@@ -199,38 +239,40 @@ router.post('/register/response', methodCheck, async (req, res) => {
       });
     }
 
-    // Create credential record - Fix: use rawId instead of undefined id
-    const credential = await Credential.create({
+    // Create credential record
+    const savedCredential = await Credential.create({
       userId: user.id,
-      credentialId: rawId, // Changed from id to rawId
+      credentialId: rawId,
       publicKey: attestationResult.authnrData.get('credentialPublicKeyPem'),
-      counter: attestationResult.authnrData.get('counter') || 0
+      counter: attestationResult.authnrData.get('counter') || 0,
+      verified: false
     });
 
-
-    // SESSION SAVING
-
-    // Clear challenge from session but keep username and mark as authenticated
+    // Update session
     req.session.challenge = null;
-    req.session.authenticated = true;  // Add this line to set authentication status
-    // Keep username in session for persistence
+    req.session.authenticated = true;
+    req.session.registeredCredentialId = rawId;
     await req.session.save();
 
+    // Return success response
     res.json({ 
-      status: 'ok', 
+      success: true,
+      status: 'ok',
       message: 'Registration successful',
+      credentialId: rawId,
       user: {
         username: user.username,
         displayName: user.displayName
       }
     });
-
   } catch (err) {
     console.error('Registration error:', err);
+    console.error('Stack trace:', err.stack);
     res.status(500).json({
-      error: 'Registration failed',
-      message: err.message,
-      details: err.stack
+      success: false,
+      status: 'error',
+      message: 'Registration failed',
+      error: err.message
     });
   }
 });

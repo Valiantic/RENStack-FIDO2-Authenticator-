@@ -20,11 +20,29 @@ export const getRegistrationOptions = async (username, displayName) => {
 
 export const sendRegistrationResponse = async (credentialResponse) => {
   try {
-    const response = await api.post('/auth/register/response', credentialResponse);
+    console.log('Sending registration response to server:', credentialResponse);
+    
+    // Support both formats - send credential as top-level properties and also as a credential object
+    const payload = {
+      ...credentialResponse,  // Include properties at top level for backward compatibility
+      credential: credentialResponse  // Also nest under credential for new format
+    };
+    
+    const response = await api.post('/auth/register/response', payload);
+    console.log('Registration response from server:', response.data);
     return response.data;
   } catch (error) {
     console.error('Registration response submission failed:', error);
-    throw error;
+    console.error('Error details:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+      headers: error.response?.headers
+    });
+    
+    // Enhanced error handling with more diagnostic info
+    const errorMessage = error.response?.data?.message || error.message;
+    throw new Error(`Registration failed: ${errorMessage}`);
   }
 };
 

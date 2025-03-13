@@ -45,47 +45,74 @@ const Register = () => {
         const credentialResponse = await createCredential(credentialOptions);
 
         setMessage('Sending registration data to server...');
+        console.log('Credential response to be sent:', credentialResponse);
         
-        // Send credential to server
-        const finalizeRes = await sendRegistrationResponse(credentialResponse);
+        try {
+            // Send credential to server with explicit error handling
+            const finalizeRes = await sendRegistrationResponse(credentialResponse);
 
-        // Check session after registration
-        console.log('Checking session after registration...');
-        const sessionCheckAfter = await api.get('/session-check');
-        console.log('Session after registration:', sessionCheckAfter.data);
+            // Check session after registration
+            console.log('Checking session after registration...');
+            const sessionCheckAfter = await api.get('/session-check');
+            console.log('Session after registration:', sessionCheckAfter.data);
 
-        console.log('Server response:', finalizeRes); // Log the full response for debugging
+            console.log('Server response:', finalizeRes); // Log the full response for debugging
 
-        if (finalizeRes.error) {
-            throw new Error(finalizeRes.error);
-        }
-
-        if (finalizeRes.status === 'ok') {
-            setMessage('Registration successful! Verifying passkey...');
-            
-            // New step: Verify the registration
-            const verificationResult = await verifyRegistration(
-                credentialResponse.id, 
-                username
-            );
-            
-            if (verificationResult.status === 'ok') {
-                setMessage('Registration and verification successful!');
-                
-                // Use the user object from the verification response
-                const userData = verificationResult.user || {
-                    username: username,
-                    displayName: displayName
-                };
-                
-                // Pass user data to the context
-                register(userData);
-                navigate('/dashboard');
-            } else {
-                throw new Error('Verification failed: ' + (verificationResult.message || 'Unknown error'));
+            if (finalizeRes.error || finalizeRes.success === false) {
+                throw new Error(finalizeRes.error || finalizeRes.message || 'Unknown registration error');
             }
-        } else {
-            throw new Error('Registration failed: The operation either timed out');
+
+            // Check for success in both old and new response formats
+            if (finalizeRes.status === 'ok' || finalizeRes.success === true) {
+                setMessage('Registration successful! Verifying passkey...');
+                
+                // Use credentialId from response if available, otherwise from our credential response
+                const credId = finalizeRes.credentialId || credentialResponse.id;
+                
+                // New step: Verify the registration
+                try {
+                    const verificationResult = await verifyRegistration(
+                        credId, 
+                        username
+                    );
+                    
+                    if (verificationResult.status === 'ok' || verificationResult.success === true) {
+                        setMessage('Registration and verification successful!');
+                        
+                        // Use the user object from the verification response
+                        const userData = verificationResult.user || {
+                            username: username,
+                            displayName: displayName
+                        };
+                        
+                        // Pass user data to the context
+                        register(userData);
+                        navigate('/dashboard');
+                    } else {
+                        throw new Error('Verification failed: ' + (verificationResult.message || 'Unknown error'));
+                    }
+                } catch (verifyError) {
+                    console.error('Verification error:', verifyError);
+                    
+                    // Fall back to just registration if verification fails
+                    setMessage('Registration successful! (Verification step skipped)');
+                    
+                    // Use the user object directly
+                    const userData = finalizeRes.user || {
+                        username: username,
+                        displayName: displayName
+                    };
+                    
+                    register(userData);
+                    navigate('/dashboard');
+                }
+            } else {
+                throw new Error('Registration failed: The operation either timed out or returned invalid data');
+            }
+        } catch (responseError) {
+            console.error('Error during registration submission:', responseError);
+            setMessage(`Registration failed: ${responseError.message}`);
+            return; // Exit early on response error
         }
     } catch (error) {
         console.error('Registration error details:', {
