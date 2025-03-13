@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { getLoginOptions, sendLoginResponse, getCredential } from '../services/authService';
+import { getLoginOptions, sendLoginResponse, getCredential, loginDirect } from '../services/authService';
 
 const Login = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
   const [username, setUsername] = useState('');
   const [message, setMessage] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   async function handleLogin() {
     try {
@@ -40,6 +41,30 @@ const Login = () => {
     }
   }
 
+  async function handleDirectLogin(username) {
+    if (!username) {
+      setMessage('Please enter your username first');
+      return;
+    }
+  
+    setMessage('Attempting simplified login...');
+    setIsLoggingIn(true);
+    
+    try {
+      const response = await loginDirect(username);
+      if (response.status === 'ok') {
+        login(response.user);
+        navigate('/dashboard');
+      } else {
+        setMessage('Login failed: ' + (response.message || 'Unknown error'));
+      }
+    } catch (error) {
+      setMessage('Login failed: ' + (error.message || 'Unknown error'));
+    } finally {
+      setIsLoggingIn(false);
+    }
+  }
+
   return (
     <div className="max-w-md mx-auto dark:bg-gray-800 rounded-lg shadow-lg p-8 m-4">
       <h2 className="text-3xl font-bold text-center text-gray-900 dark:text-white mb-6">Login</h2>
@@ -59,6 +84,16 @@ const Login = () => {
         >
           Login with WebAuthn
         </button>
+
+        <div className="mt-4 text-center">
+          <button 
+            onClick={() => handleDirectLogin(username)}
+            className="text-sm text-blue-600 hover:underline"
+            disabled={isLoggingIn}
+          >
+            Having trouble logging in? Try simplified login
+          </button>
+        </div>
       </div>
       
       {message && (

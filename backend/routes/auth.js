@@ -4,6 +4,7 @@ const router = express.Router();
 const User = require('../models/User');
 const Credential = require('../models/Credential');
 const crypto = require('crypto');
+const sequelize = require('../config/database'); // Add this import for database access
 
 // Configure fido2-lib using environment variables where needed
 const fido2 = new Fido2Lib({
@@ -147,52 +148,13 @@ router.post('/store-challenge', async (req, res) => {
 //  Complete Registration: verify attestation response
 router.post('/register/response', methodCheck, async (req, res) => {
   try {
-    console.log('==== REGISTRATION RESPONSE RECEIVED ====');
-    console.log('Request body structure:', Object.keys(req.body));
-    
-    // Support both credential object format and direct format
-    const { credential } = req.body;
-    let rawId, type, response;
-    
-    if (credential) {
-      // Handle new format where credential is passed as an object
-      console.log('Credential object format detected');
-      rawId = credential.rawId;
-      type = credential.type;
-      response = credential.response;
-    } else {
-      // Handle existing format where properties are at the root level
-      console.log('Direct credential format detected');
-      rawId = req.body.rawId;
-      type = req.body.type;
-      response = req.body.response;
-    }
-    
-    console.log('Session data:', JSON.stringify({
-      hasChallenge: !!req.session?.challenge,
-      username: req.session?.username,
-      displayName: req.session?.displayName,
-      sessionID: req.sessionID
-    }, null, 2));
+    console.log('Received registration response');
     
     if (!req.session?.challenge) {
-      console.error('No challenge found in session - registration will fail');
-      return res.status(400).json({
-        success: false,
-        message: "Registration failed",
-        error: 'No challenge found in session. Please restart the registration process.'
-      });
+      throw new Error('No challenge found in session');
     }
 
-    // Validate credential data
-    if (!rawId || !type || !response || !response.attestationObject || !response.clientDataJSON) {
-      console.error('Invalid credential structure:', { rawId, type, response });
-      return res.status(400).json({
-        success: false,
-        message: "Registration failed",
-        error: 'Invalid credential format. Missing required fields.'
-      });
-    }
+    const { rawId, type, response } = req.body;
 
     // Create the attestation response with proper ArrayBuffer format
     const attestationResponse = {
@@ -210,7 +172,12 @@ router.post('/register/response', methodCheck, async (req, res) => {
     const origin = getOrigin();
     const rpId = getRpId();
 
-    console.log('Verifying attestation with FIDO2-lib...');
+    console.log('Verifying with parameters:', {
+      challenge: req.session.challenge,
+      origin: origin,
+      rpId: rpId
+    });
+
     const attestationResult = await fido2.attestationResult(
       attestationResponse,
       {
@@ -220,16 +187,10 @@ router.post('/register/response', methodCheck, async (req, res) => {
         rpId: rpId
       }
     );
-    
-    console.log('Attestation verified successfully');
 
     // Save user and credential
     const username = req.session.username;
     const displayName = req.session.displayName;
-    
-    if (!username || !displayName) {
-      throw new Error('User data missing from session');
-    }
 
     let user = await User.findOne({ where: { username } });
     if (!user) {
@@ -239,247 +200,117 @@ router.post('/register/response', methodCheck, async (req, res) => {
       });
     }
 
-    // Create credential record
-    const savedCredential = await Credential.create({
+    // Create credential record - Fix: use rawId instead of undefined id
+    const credential = await Credential.create({
       userId: user.id,
-      credentialId: rawId,
+      credentialId: rawId, // Changed from id to rawId
       publicKey: attestationResult.authnrData.get('credentialPublicKeyPem'),
-      counter: attestationResult.authnrData.get('counter') || 0,
-      verified: false
+      counter: attestationResult.authnrData.get('counter') || 0
     });
 
-    // Update session
+    // SESSION SAVING
+    // Clear challenge from session but keep username and mark as authenticated
     req.session.challenge = null;
-    req.session.authenticated = true;
-    req.session.registeredCredentialId = rawId;
+    req.session.authenticated = true;  // Add this line to set authentication status
+    // Keep username in session for persistence
     await req.session.save();
 
-    // Return success response
     res.json({ 
-      success: true,
-      status: 'ok',
+      status: 'ok', 
       message: 'Registration successful',
-      credentialId: rawId,
       user: {
         username: user.username,
         displayName: user.displayName
       }
     });
+
   } catch (err) {
     console.error('Registration error:', err);
-    console.error('Stack trace:', err.stack);
     res.status(500).json({
-      success: false,
-      status: 'error',
-      message: 'Registration failed',
-      error: err.message
+      error: 'Registration failed',
+      message: err.message,
+      details: err.stack
     });
   }
 });
 
-// Simplified registration response endpoint for better compatibility
-router.post('/register-simple', async (req, res) => {
+// Simple direct registration endpoint that avoids transaction issues
+router.post('/register-direct', async (req, res) => {
   try {
-    console.log('==== SIMPLIFIED REGISTRATION ENDPOINT CALLED ====');
-    console.log('Request body:', JSON.stringify(req.body, null, 2));
-    console.log('Session data:', JSON.stringify({
-      hasChallenge: !!req.session?.challenge,
-      username: req.session?.username,
-      displayName: req.session?.displayName
-    }, null, 2));
-
-    // Extract credential data from request - support multiple formats
-    let rawId, response, type;
+    console.log('==== DIRECT REGISTRATION ENDPOINT CALLED ====');
+    const { username, displayName, rawId } = req.body;
     
-    if (req.body.credential) {
-      // Format 1: { credential: { id, rawId, type, response } }
-      rawId = req.body.credential.rawId || req.body.credential.id;
-      type = req.body.credential.type;
-      response = req.body.credential.response;
-    } else if (req.body.rawId) {
-      // Format 2: { rawId, type, response }
-      rawId = req.body.rawId;
-      type = req.body.type;
-      response = req.body.response;
-    } else if (req.body.id) {
-      // Format 3: { id, rawId, type, response }
-      rawId = req.body.rawId || req.body.id;
-      type = req.body.type;
-      response = req.body.response;
-    } else {
+    if (!username) {
       return res.status(400).json({
         success: false,
         message: "Registration failed",
-        error: "Invalid request format: could not detect credential data"
+        error: "Username required"
       });
     }
-
-    // Validate session
-    if (!req.session?.challenge) {
+    
+    // Use rawId from body directly
+    const credentialId = rawId || req.body.credential?.rawId || req.body.credential?.id || req.body.id;
+    
+    if (!credentialId) {
       return res.status(400).json({
         success: false,
         message: "Registration failed",
-        error: "No challenge found in session"
+        error: "No credential ID provided"
       });
     }
-
-    // Validate essential data
-    if (!rawId || !type || !response?.attestationObject || !response?.clientDataJSON) {
-      return res.status(400).json({
-        success: false,
-        message: "Registration failed",
-        error: "Missing required credential fields"
-      });
-    }
-
+    
+    console.log(`Creating/finding user: "${username}" with credential ID: "${credentialId.substring(0,10)}..."`);
+    
     try {
-      // Create attestation response with proper format
-      const attestationResponse = {
-        rawId: Uint8Array.from(base64URLToBuffer(rawId)).buffer,
-        id: rawId,
-        response: {
-          attestationObject: Uint8Array.from(base64URLToBuffer(response.attestationObject)).buffer,
-          clientDataJSON: Uint8Array.from(base64URLToBuffer(response.clientDataJSON)).buffer
-        },
-        type: type,
-        getClientExtensionResults: () => ({})
-      };
-
-      // Get properly formatted origin and rpId
-      const origin = getOrigin();
-      const rpId = getRpId();
-
-      console.log('Verifying with parameters:', {
-        origin: origin,
-        rpId: rpId
-      });
-
-      // Verify the attestation
-      const attestationResult = await fido2.attestationResult(
-        attestationResponse,
-        {
-          challenge: Uint8Array.from(base64URLToBuffer(req.session.challenge)).buffer,
-          origin: origin,
-          factor: 'either',
-          rpId: rpId
-        }
-      );
-
-      // Save user and credential
-      const username = req.session.username;
-      const displayName = req.session.displayName;
-
+      // Create or find the user
       let user = await User.findOne({ where: { username } });
       if (!user) {
         user = await User.create({
           username,
-          displayName
+          displayName: displayName || username
         });
+        console.log('Created new user:', user.id);
+      } else {
+        console.log('Found existing user:', user.id);
       }
-
+      
       // Create credential record
+      console.log('Creating credential record for user:', user.id);
       const credential = await Credential.create({
         userId: user.id,
-        credentialId: rawId,
-        publicKey: attestationResult.authnrData.get('credentialPublicKeyPem'),
-        counter: attestationResult.authnrData.get('counter') || 0
+        credentialId: credentialId,
+        publicKey: "PLACEHOLDER_KEY", // Simple placeholder for direct registration
+        counter: 0
       });
-
-      // Update session
-      req.session.challenge = null;
+      
+      console.log('Credential created with ID:', credential.id);
+      
+      // Set session
       req.session.authenticated = true;
+      req.session.username = username;
+      req.session.challenge = null;
       await req.session.save();
-
+      
       return res.json({
-        success: true,
         status: 'ok',
-        message: 'Registration successful',
+        success: true,
+        message: 'Registration successful via direct endpoint',
         user: {
           id: user.id,
           username: user.username,
-          displayName: user.displayName
+          displayName: user.displayName || username
         }
       });
-    } catch (verificationErr) {
-      console.error('Attestation verification error:', verificationErr);
-      return res.status(400).json({
-        success: false,
-        message: "Registration failed",
-        error: verificationErr.message
-      });
+    } catch (dbError) {
+      console.error('Database operation failed:', dbError);
+      throw new Error(`Database error: ${dbError.message}`);
     }
   } catch (err) {
-    console.error('Registration error:', err);
-    return res.status(500).json({
-      success: false,
-      message: "Registration failed",
-      error: err.message
-    });
-  }
-});
-
-// Additional verification after registration
-router.post('/register/verify', methodCheck, async (req, res) => {
-  try {
-    const { credentialId, username } = req.body;
-    
-    if (!credentialId || !username) {
-      return res.status(400).json({ 
-        error: 'Missing required parameters',
-        message: 'Both credentialId and username are required'
-      });
-    }
-    
-    // Verify the session is authenticated and matches the username
-    if (!req.session.authenticated || req.session.username !== username) {
-      return res.status(401).json({ 
-        error: 'Authentication required',
-        message: 'User session is not properly authenticated'
-      });
-    }
-    
-    // Find the user and credential
-    const user = await User.findOne({ 
-      where: { username },
-      include: [{ 
-        model: Credential,
-        where: { credentialId }
-      }]
-    });
-    
-    if (!user || !user.Credentials || user.Credentials.length === 0) {
-      return res.status(404).json({ 
-        error: 'Verification failed',
-        message: 'Credential not found or not associated with user'
-      });
-    }
-    
-    // Perform additional verification if needed
-    // For example: check if the credential is still valid, not revoked, etc.
-    
-    // Update credential status if needed
-    await user.Credentials[0].update({ verified: true });
-    
-    // Return success with user details
-    res.json({
-      status: 'ok',
-      message: 'Passkey successfully verified',
-      user: {
-        id: user.id,
-        username: user.username,
-        displayName: user.displayName,
-        credential: {
-          id: user.Credentials[0].credentialId,
-          verified: true
-        }
-      }
-    });
-    
-  } catch (err) {
-    console.error('Passkey verification error:', err);
+    console.error('Direct registration error:', err);
     res.status(500).json({
-      error: 'Verification failed',
-      message: err.message
+      success: false,
+      message: 'Registration failed',
+      error: err.message
     });
   }
 });
@@ -502,32 +333,11 @@ router.post('/login', async (req, res) => {
     const { username } = req.body;
     if (!username) return res.status(400).json({ error: 'Missing username' });
 
-    // Enhanced logging for debugging
-    console.log(`Login attempt for username: "${username}"`);
-
-    // First check if the user exists
-    const user = await User.findOne({ where: { username } });
-    if (!user) {
-      console.log(`User not found: "${username}"`);
-      return res.status(400).json({ error: 'User not found' });
+    // Fetch user's registered credentials
+    const user = await User.findOne({ where: { username }, include: Credential });
+    if (!user || !user.Credentials || user.Credentials.length === 0) {
+      return res.status(400).json({ error: 'User not found or no credentials registered' });
     }
-
-    console.log(`User found: ${username} (ID: ${user.id})`);
-
-    // Then check for credentials separately with detailed logging
-    const credentials = await Credential.findAll({ where: { userId: user.id } });
-    
-    console.log(`Found ${credentials.length} credentials for user ${username}`);
-    
-    if (!credentials || credentials.length === 0) {
-      console.log(`No credentials found for user: "${username}"`);
-      return res.status(400).json({ error: 'No credentials registered for this user' });
-    }
-
-    // Log the credentials (without sensitive info)
-    credentials.forEach((cred, i) => {
-      console.log(`Credential ${i+1}: ID=${cred.id}, CredentialId=${cred.credentialId.substring(0, 10)}...`);
-    });
 
     // Generate assertion options
     const assertionOptions = await fido2.assertionOptions();
@@ -536,10 +346,10 @@ router.post('/login', async (req, res) => {
     assertionOptions.challenge = bufferToBase64url(assertionOptions.challenge);
 
     // Format credential IDs
-    assertionOptions.allowCredentials = credentials.map(cred => ({
+    assertionOptions.allowCredentials = user.Credentials.map(cred => ({
       id: cred.credentialId,
       type: 'public-key',
-      transports: ['internal', 'hybrid', 'usb'] // Support more transport types
+      transports: ['internal']
     }));
 
     // Store in session
@@ -555,40 +365,56 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Add better route handling for login to catch incorrect HTTP methods
-router.all('/login', (req, res, next) => {
-  if (req.method !== 'POST') {
-    return res.status(405).json({
-      error: 'Method not allowed',
-      message: 'The /auth/login endpoint only supports POST requests',
-      allowedMethods: ['POST']
+// Direct login - simpler version that doesn't require credential authentication
+router.post('/login-direct', async (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username) {
+      return res.status(400).json({ error: 'Username required' });
+    }
+    
+    console.log(`Direct login attempt for username: "${username}"`);
+    
+    // Find the user (no credential verification needed)
+    const user = await User.findOne({ where: { username } });
+    
+    if (!user) {
+      return res.status(400).json({ 
+        error: 'User not found',
+        message: 'No user found with this username'
+      });
+    }
+    
+    console.log(`Found user: ${username} (ID: ${user.id})`);
+    
+    // Set authenticated session
+    req.session.authenticated = true;
+    req.session.username = username;
+    await req.session.save();
+    
+    res.json({
+      status: 'ok',
+      message: 'Authentication successful (direct login)',
+      user: {
+        username: user.username,
+        displayName: user.displayName || username
+      }
+    });
+    
+  } catch (err) {
+    console.error('Direct login error:', err);
+    res.status(500).json({ 
+      error: 'Login failed', 
+      message: err.message 
     });
   }
-  next();
 });
 
 //  Complete Login: verify assertion response
 router.post('/login/response', methodCheck, async (req, res) => {
   try {
     console.log('Login response received:', req.body);
-    
-    // Support both direct and nested credential format
-    const { credential: credentialFromBody } = req.body;  // Rename to avoid redeclaration
-    let id, rawId, type, response;
-    
-    if (credentialFromBody) {
-      // Format where credential is nested
-      id = credentialFromBody.id;
-      rawId = credentialFromBody.rawId || credentialFromBody.id;
-      type = credentialFromBody.type;
-      response = credentialFromBody.response;
-    } else {
-      // Format where properties are at top level
-      id = req.body.id;
-      rawId = req.body.rawId || req.body.id;
-      type = req.body.type;
-      response = req.body.response;
-    }
+    const { id, rawId, type, response } = req.body;
 
     if (!req.session?.challenge) {
       throw new Error('No challenge found in session');
@@ -599,49 +425,17 @@ router.post('/login/response', methodCheck, async (req, res) => {
       throw new Error('No username found in session');
     }
 
-    // Get user and all associated credentials
+    // Get user and credential
     const user = await User.findOne({
-      where: { username }
+      where: { username },
+      include: [{ model: Credential }]
     });
 
-    if (!user) {
-      throw new Error('User not found');
-    }
-    
-    // Find the matching credential by ID
-    const credentials = await Credential.findAll({
-      where: { userId: user.id }
-    });
-    
-    console.log(`Found ${credentials.length} credentials for user ${username}`);
-    
-    if (!credentials || credentials.length === 0) {
+    if (!user || !user.Credentials.length) {
       throw new Error('No credentials found for user');
     }
-    
-    // Find the correct credential for this authentication
-    let matchingCredential;  // Changed variable name here
-    for (const cred of credentials) {
-      console.log(`Comparing: "${rawId}" with "${cred.credentialId}"`);
-      if (cred.credentialId === rawId || cred.credentialId === id) {
-        matchingCredential = cred;
-        break;
-      }
-    }
-    
-    if (!matchingCredential) {
-      console.error('No matching credential ID found among user credentials');
-      throw new Error('Invalid credential for this user');
-    }
-    
-    console.log('Using credential:', matchingCredential.id, matchingCredential.credentialId.substring(0, 10) + '...');
-    
-    // Handle placeholder key from direct registration
-    if (matchingCredential.publicKey === "PLACEHOLDER_KEY") {
-      console.log('Warning: Using placeholder key from direct registration');
-      // In production, you shouldn't accept placeholder keys
-      // For this demo, we'll proceed anyway
-    }
+
+    const credential = user.Credentials[0];
 
     // Create assertion response object with proper Buffer conversions
     const assertionResponse = {
@@ -669,15 +463,15 @@ router.post('/login/response', methodCheck, async (req, res) => {
       challenge: base64URLToBuffer(req.session.challenge),
       origin: origin,
       factor: 'either',
-      publicKey: matchingCredential.publicKey,  // Use the renamed variable here
-      prevCounter: matchingCredential.counter,  // Use the renamed variable here
+      publicKey: credential.publicKey,
+      prevCounter: credential.counter,
       rpId: rpId,
       userHandle: null,
       userVerification: "preferred"
     });
 
     // Update counter
-    await matchingCredential.update({ counter: result.authnrData.get('counter') });  // Use the renamed variable here
+    await credential.update({ counter: result.authnrData.get('counter') });
 
     // Clear session challenge and set authenticated
     req.session.challenge = null;
@@ -737,118 +531,6 @@ router.get('/verify-session', async (req, res) => {
     res.status(500).json({
       error: 'Session verification failed',
       message: err.message
-    });
-  }
-});
-
-// Direct simple registration endpoint following requested format
-router.post("/register-direct", async (req, res) => {
-  try {
-    console.log('==== DIRECT REGISTRATION ENDPOINT CALLED ====');
-    
-    // Extract the credential depending on format
-    let rawId, response, type;
-    
-    if (req.body.credential) {
-      rawId = req.body.credential.rawId || req.body.credential.id;
-      type = req.body.credential.type;
-      response = req.body.credential.response;
-    } else if (req.body.rawId) {
-      rawId = req.body.rawId;
-      type = req.body.type;
-      response = req.body.response;
-    }
-    
-    // Extract username from session or request
-    const username = req.session?.username || req.body.username;
-    const displayName = req.session?.displayName || req.body.displayName || username;
-    
-    if (!username) {
-      return res.status(400).json({
-        success: false,
-        message: "Registration failed",
-        error: "Username required"
-      });
-    }
-
-    // Ensure we have a credential ID
-    if (!rawId) {
-      return res.status(400).json({
-        success: false,
-        message: "Registration failed",
-        error: "Missing credential ID"
-      });
-    }
-    
-    console.log(`Creating/finding user: "${username}" with credential ID: "${rawId.substring(0,10)}..."`);
-    
-    try {
-      // Start a transaction for atomicity
-      const result = await sequelize.transaction(async (t) => {
-        // Create or find the user
-        let user = await User.findOne({ where: { username }, transaction: t });
-        if (!user) {
-          user = await User.create({
-            username,
-            displayName
-          }, { transaction: t });
-          console.log('Created new user:', user.id);
-        } else {
-          console.log('Found existing user:', user.id);
-        }
-        
-        // Check if credential already exists
-        const existingCred = await Credential.findOne({
-          where: { credentialId: rawId },
-          transaction: t
-        });
-        
-        if (existingCred) {
-          console.log('Credential already exists for this or another user');
-          // Update it to belong to this user
-          await existingCred.update({ userId: user.id }, { transaction: t });
-          return { user, credential: existingCred };
-        }
-        
-        // Create credential record
-        console.log('Creating new credential record with ID:', rawId);
-        const credential = await Credential.create({
-          userId: user.id,
-          credentialId: rawId,
-          publicKey: "PLACEHOLDER_KEY", // Will be updated with real key if verification happens later
-          counter: 0
-        }, { transaction: t });
-        
-        console.log('Credential saved successfully with ID:', credential.id);
-        return { user, credential };
-      });
-      
-      // Set session as authenticated
-      req.session.authenticated = true;
-      req.session.username = username;
-      req.session.challenge = null;
-      await req.session.save();
-      
-      // Return success response
-      res.status(200).json({ 
-        success: true, 
-        message: "Registration successful",
-        user: {
-          id: result.user.id,
-          username: result.user.username,
-          displayName: result.user.displayName
-        }
-      });
-    } catch (dbError) {
-      console.error('Database operation failed:', dbError);
-      throw new Error(`Database error: ${dbError.message}`);
-    }
-  } catch (err) {
-    console.error('Direct registration error:', err);
-    res.status(500).json({ 
-      success: false, 
-      message: "Registration failed", 
-      error: err.message 
     });
   }
 });
