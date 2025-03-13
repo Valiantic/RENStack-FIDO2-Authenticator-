@@ -5,47 +5,44 @@ import Login from './components/Login';
 import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 
-
-// Protected route component with enhanced session validation
+// Fixed ProtectedRoute that prioritizes session storage over context
 const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated, loading, currentUser } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
   
-  // Check both context auth state and session storage
-  const checkAuthFromStorage = () => {
+  // Check session storage first (most reliable)
+  const checkSessionStorage = () => {
     const storedUser = sessionStorage.getItem('authenticatedUser');
+    const lastAction = localStorage.getItem('last_auth_action');
+    
+    console.log('Protected route check:', {
+      storedUser: !!storedUser,
+      contextAuth: isAuthenticated,
+      lastAction
+    });
+    
     return !!storedUser;
   };
   
-  // Show loading while checking auth
+  // Show loading state during authentication check
   if (loading) {
     return <div className="flex justify-center items-center h-screen">
-      <div className="text-xl">Loading...</div>
+      <div className="text-xl">Loading dashboard...</div>
     </div>;
   }
   
-  // Extra validation beyond the context
-  const hasAuthInStorage = checkAuthFromStorage();
+  // Check both context and session storage
+  const isAuthedInStorage = checkSessionStorage();
   
-  // Redirect to login if not authenticated by any means
-  if (!isAuthenticated && !hasAuthInStorage) {
-    console.log('Not authenticated, redirecting to login');
+  if (!isAuthenticated && !isAuthedInStorage) {
+    console.log('No authentication found, redirecting to login');
+    // First clear any stale data
+    localStorage.removeItem('last_auth_action');
     return <Navigate to="/login" replace />;
   }
   
-  // If authenticated but we hit a 404 on the dashboard, fix the route
-  useEffect(() => {
-    if (isAuthenticated) {
-      // Check if we're on a route that should be valid but might 404
-      const path = window.location.pathname;
-      if (path === '/dashboard' && window.location.href.includes('404')) {
-        console.error('Dashboard route causing 404, trying to fix...');
-        window.location.replace('/dashboard');
-      }
-    }
-  }, [isAuthenticated]);
-  
-  // Render children if authenticated
+  // If we get here, user is authenticated
+  console.log('User is authenticated, showing dashboard');
   return children;
 };
 

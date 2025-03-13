@@ -46,7 +46,7 @@ const Login = () => {
     }
   }, [navigate]);
 
-  // WebAuthn authentication - primary login method
+  // WebAuthn authentication with more reliable redirect
   async function handleWebAuthnAuthentication(username) {
     try {
       setMessage('Starting WebAuthn authentication...');
@@ -74,29 +74,30 @@ const Login = () => {
       if (verificationRes.status === 'ok') {
         console.log('Authentication successful!', verificationRes);
         
-        // Save authentication info in context
-        login(verificationRes.user);
+        // Ensure we have a complete user object
+        const userData = verificationRes.user || {
+          username,
+          displayName: username,
+          id: verificationRes.userId || Date.now()
+        };
         
-        // Set success state and start redirect countdown
-        setAuthSuccess(true);
+        // Store auth status in multiple locations
+        localStorage.setItem('last_auth_action', 'login_success');
+        localStorage.setItem('auth_username', username);
+        
+        // Most important - session storage
+        sessionStorage.setItem('authenticatedUser', JSON.stringify(userData));
+        
+        // Then update context (might get lost in navigation)
+        login(userData);
+        
         setMessage('Login successful! Redirecting to dashboard...');
         
-        // Force immediate redirect - don't wait
-        try {
-          // Clear any previous redirect attempts
-          sessionStorage.removeItem('force_auth_redirect');
-          localStorage.removeItem('redirect_attempted');
-          
-          // Mark that we're attempting to redirect
-          localStorage.setItem('redirect_attempted', 'true');
-          
-          // Use direct window location for most reliable navigation
+        // MOST RELIABLE: Force page navigation after delay
+        setTimeout(() => {
+          console.log('Forcing navigation via location.href');
           window.location.href = '/dashboard';
-        } catch (navError) {
-          console.error('Navigation error:', navError);
-          // As a last resort
-          window.location.replace('/dashboard');
-        }
+        }, 500);
       } else {
         throw new Error(verificationRes.message || 'Login failed');
       }

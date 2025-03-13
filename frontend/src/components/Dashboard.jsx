@@ -2,12 +2,37 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { verifySession, logoutUser } from '../services/authService';
+import { checkCurrentAuthState } from '../utils/authDebugger'; // Import the debug helper
 
 const Dashboard = () => {
   const { currentUser, logout, checkSessionValidity } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   
+  // Debug when dashboard first loads
+  useEffect(() => {
+    console.log('Dashboard mounted');
+    const authState = checkCurrentAuthState();
+    console.log('Dashboard auth state:', authState);
+    
+    // Mark that we've seen the dashboard
+    localStorage.setItem('dashboard_visited', 'true');
+    
+    // If authenticated via session storage but not in context
+    if (authState.sessionStorage && !currentUser) {
+      console.log('Found auth in session storage but not in context');
+      
+      // This indicates a potential auth state mismatch
+      try {
+        const userData = JSON.parse(sessionStorage.getItem('authenticatedUser'));
+        console.log('User data from session storage:', userData);
+        // We could potentially force reload here
+      } catch (e) {
+        console.error('Failed to parse session storage:', e);
+      }
+    }
+  }, [currentUser]);
+
   // Verify session when component mounts
   useEffect(() => {
     const checkSession = async () => {

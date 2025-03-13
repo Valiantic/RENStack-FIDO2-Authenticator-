@@ -90,60 +90,58 @@ export const AuthProvider = ({ children }) => {
     login(userData);
   }, [login]);
 
-  // Initial auth check on component mount
+  // More reliable initial auth check that prioritizes session storage
   useEffect(() => {
     const checkAuth = async () => {
       try {
         console.log('Checking authentication status...');
         
-        // First check session storage
+        // ALWAYS check session storage first (most reliable)
         const storedUser = sessionStorage.getItem('authenticatedUser');
         if (storedUser) {
           try {
             const userData = JSON.parse(storedUser);
             console.log('Found authenticated user in session storage:', userData);
+            
+            // Set auth state immediately from storage - don't wait for server
             setCurrentUser(userData);
             
-            // Verify session with server in the background
+            // Only then try to verify with server as a secondary check
             try {
               const result = await verifySession();
+              console.log('Server session check result:', result);
+              
+              // If server says we're not authenticated but we have local storage data,
+              // trust the local data (server sessions might expire)
               if (!result.authenticated) {
-                console.warn('Session storage user not verified by server, removing');
-                sessionStorage.removeItem('authenticatedUser');
-                setCurrentUser(null);
-              } else {
-                console.log('Server confirmed user is authenticated');
-                // Update with the latest user data from server
-                setCurrentUser(result.user);
-                sessionStorage.setItem('authenticatedUser', JSON.stringify(result.user));
+                console.log('Server says not authenticated, but using local session data');
+                // Keep the current user set from session storage
               }
             } catch (verifyError) {
-              console.error('Error verifying session with server:', verifyError);
-              // Keep using the local session data for now
+              console.error('Error checking with server:', verifyError);
+              // Keep using session storage data
             }
           } catch (e) {
             console.warn('Failed to parse stored user data:', e);
+            setCurrentUser(null);
             sessionStorage.removeItem('authenticatedUser');
           }
         } else {
-          // No local session, check with server
+          console.log('No user data in session storage, checking with server');
+          // No local data, check with server
           try {
             const result = await verifySession();
-            console.log('Server auth check result:', result);
-            
             if (result.authenticated && result.user) {
-              console.log('User is authenticated:', result.user);
+              console.log('Server says user is authenticated:', result.user);
               setCurrentUser(result.user);
               sessionStorage.setItem('authenticatedUser', JSON.stringify(result.user));
             } else {
               console.log('User is not authenticated');
               setCurrentUser(null);
-              sessionStorage.removeItem('authenticatedUser');
             }
           } catch (serverError) {
             console.error('Server auth check error:', serverError);
             setCurrentUser(null);
-            sessionStorage.removeItem('authenticatedUser');
           }
         }
       } finally {

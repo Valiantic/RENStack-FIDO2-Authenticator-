@@ -69,26 +69,29 @@ const Register = () => {
                 // Use the user object from the response
                 const userData = finalizeRes.user || {
                     username: username,
-                    displayName: displayName
+                    displayName: displayName,
+                    id: finalizeRes.userId || Date.now() // Ensure we have some ID
                 };
                 
-                // Pass user data to the context
+                // Store authentication in multiple locations for reliability
+                localStorage.setItem('last_auth_action', 'register_success');
+                localStorage.setItem('auth_username', username);
+                
+                // Set authenticated in session storage first (most important)
+                sessionStorage.setItem('authenticatedUser', JSON.stringify(userData));
+                
+                // Then update context state
                 register(userData);
-
-                // Force immediate redirect - don't wait
+                
+                // Show success message
                 setMessage('Registration successful! Redirecting to dashboard...');
                 
-                try {
-                    // Store auth info in session storage to ensure it persists
-                    sessionStorage.setItem('authenticatedUser', JSON.stringify(userData));
-                    
-                    // Use direct window location for reliable redirect  
+                // HARDCODED REDIRECT - most reliable method
+                setTimeout(() => {
+                    console.log('Forcing dashboard navigation via window.location');
+                    // Force reload to clear any potential state issues and ensure a fresh start
                     window.location.href = '/dashboard';
-                } catch (navError) {
-                    console.error('Navigation error:', navError);
-                    // Fall back to replace
-                    window.location.replace('/dashboard');
-                }
+                }, 500);
             } else {
                 throw new Error('Registration failed: The operation either timed out or returned invalid data');
             }
