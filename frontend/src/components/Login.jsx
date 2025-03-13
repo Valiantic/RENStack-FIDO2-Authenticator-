@@ -79,21 +79,11 @@ const Login = () => {
         />
         
         <button 
-          onClick={handleLogin}
+         onClick={() => handleDirectLogin(username)}
           className="w-full bg-blue-500 hover:bg-blue-600 !important text-white font-bold py-2 px-4 rounded-lg transition duration-200"
         >
           Login with WebAuthn
         </button>
-
-        <div className="mt-4 text-center">
-          <button 
-            onClick={() => handleDirectLogin(username)}
-            className="text-sm text-blue-600 hover:underline"
-            disabled={isLoggingIn}
-          >
-            Having trouble logging in? Try simplified login
-          </button>
-        </div>
       </div>
       
       {message && (
