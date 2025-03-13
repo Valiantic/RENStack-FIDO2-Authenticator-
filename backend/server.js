@@ -64,16 +64,17 @@ app.use(helmet({
     crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }
 }));
 
-// Enhanced session configuration for cross-domain support
+// Enhanced session configuration for cross-domain support with longer expiration
 const sessionConfig = {
     secret: process.env.SESSION_SECRET || 'fallback-secret-for-development-only',
     resave: false,
-    saveUninitialized: false, // changed to false to prevent empty sessions
+    saveUninitialized: false,
     name: 'fido2session',
     cookie: {
+        // CRITICAL FIX: Increase session timeout to 7 days
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days instead of 1 day
         secure: process.env.NODE_ENV === 'production',
         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-        maxAge: 24 * 60 * 60 * 1000,
         httpOnly: true,
         path: '/'
     }
@@ -93,6 +94,52 @@ if (process.env.NODE_ENV === 'production' && process.env.COOKIE_DOMAIN) {
 
 // Use session middleware with enhanced config
 app.use(session(sessionConfig));
+
+// Enhanced session save mechanism to ensure reliability
+app.use((req, res, next) => {
+    const originalEnd = res.end;
+    const originalJson = res.json;
+    
+    // Override res.end to ensure session is saved before responding
+    res.end = function() {
+        if (req.session && req.session.save) {
+            try {
+                req.session.save(err => {
+                    if (err) {
+                        console.error('Session save error in res.end:', err);
+                    }
+                    originalEnd.apply(res, arguments);
+                });
+            } catch (e) {
+                console.error('Exception in session save:', e);
+                originalEnd.apply(res, arguments);
+            }
+        } else {
+            originalEnd.apply(res, arguments);
+        }
+    };
+    
+    // Also override res.json for better session handling
+    res.json = function(data) {
+        if (req.session && req.session.save) {
+            try {
+                req.session.save(err => {
+                    if (err) {
+                        console.error('Session save error in res.json:', err);
+                    }
+                    originalJson.call(this, data);
+                });
+            } catch (e) {
+                console.error('Exception in session save (json):', e);
+                originalJson.call(this, data);
+            }
+        } else {
+            originalJson.call(this, data);
+        }
+    };
+    
+    next();
+});
 
 // Add explicit session save middleware
 app.use((req, res, next) => {

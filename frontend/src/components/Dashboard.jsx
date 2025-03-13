@@ -5,9 +5,10 @@ import { verifySession, logoutUser } from '../services/authService';
 import { checkCurrentAuthState } from '../utils/authDebugger'; // Import the debug helper
 
 const Dashboard = () => {
-  const { currentUser, logout, checkSessionValidity } = useAuth();
+  const { currentUser, logout, checkSessionValidity, forceDashboardNavigation } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [localUser, setLocalUser] = useState(null);
   
   // Effect to ensure we have user data
   useEffect(() => {
@@ -16,41 +17,51 @@ const Dashboard = () => {
     // First clear the auth-in-progress flag if it exists
     localStorage.removeItem('authInProgress');
     
-    // Get user data from various sources
-    let userData = null;
-    
-    // First check context
-    if (currentUser) {
-      console.log('Dashboard: Using user data from context');
-      userData = currentUser;
-    } else {
+    // Function to get user data from various sources
+    const getUserData = () => {
+      // First try context
+      if (currentUser) {
+        console.log('Dashboard: Using user data from context');
+        return currentUser;
+      }
+      
       // Then try session storage
       try {
         const storedUser = sessionStorage.getItem('authenticatedUser');
         if (storedUser) {
-          userData = JSON.parse(storedUser);
+          const userData = JSON.parse(storedUser);
           console.log('Dashboard: Using user data from sessionStorage');
+          return userData;
         }
       } catch (e) {
         console.error('Dashboard: Error reading from sessionStorage', e);
       }
-    }
+      
+      return null;
+    };
+    
+    // Get user data
+    const userData = getUserData();
     
     if (userData) {
+      // CRITICAL FIX: Store user data in component state to prevent flickering
+      setLocalUser(userData);
       setLoading(false);
       
-      // Wait before checking session with server
+      // Verify session in background with error handling, don't redirect on failure
       setTimeout(() => {
         checkSessionValidity().catch(err => {
-          // Log but DON'T redirect on failure - trust local auth
-          console.warn('Session check failed, but keeping user on dashboard:', err.message);
+          console.warn('Background session check failed, maintaining dashboard view:', err);
         });
-      }, 2000); // 2 seconds delay
+      }, 2000);
     } else {
       console.log('Dashboard: No user data found in any source');
       setLoading(false);
     }
   }, [currentUser, checkSessionValidity]);
+  
+  // CRITICAL FIX: Use either context user or local component state user
+  const userToDisplay = currentUser || localUser;
   
   // Logout handler
   const handleLogout = async () => {
@@ -70,6 +81,7 @@ const Dashboard = () => {
     }
   };
   
+  // Show loading state
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -78,7 +90,10 @@ const Dashboard = () => {
     );
   }
   
-  if (!currentUser) {
+  // Redirect if no user data available
+  if (!userToDisplay) {
+    // IMPORTANT: Add small delay before redirecting to avoid flicker
+    setTimeout(() => navigate('/login'), 100);
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="text-xl font-semibold">Session expired. Redirecting...</div>
@@ -86,13 +101,16 @@ const Dashboard = () => {
     );
   }
 
+  // Render dashboard with user data
   return (
     <div className="p-8 max-w-4xl mx-auto">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Dashboard</h1>
         
         <div className="bg-blue-50 dark:bg-blue-900 p-4 rounded-lg mb-6">
-          <h2 className="text-lg font-semibold text-blue-700 dark:text-blue-300">Welcome, {currentUser.displayName || currentUser.username}!</h2>
+          <h2 className="text-lg font-semibold text-blue-700 dark:text-blue-300">
+            Welcome, {userToDisplay.displayName || userToDisplay.username}!
+          </h2>
           <p className="text-blue-600 dark:text-blue-400 mt-1">
             You are logged in with WebAuthn passkeys.
           </p>
@@ -103,12 +121,12 @@ const Dashboard = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded">
               <span className="text-gray-500 dark:text-gray-400">Username:</span> 
-              <span className="ml-2 font-medium">{currentUser.username}</span>
+              <span className="ml-2 font-medium">{userToDisplay.username}</span>
             </div>
-            {currentUser.displayName && (
+            {userToDisplay.displayName && (
               <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded">
                 <span className="text-gray-500 dark:text-gray-400">Display Name:</span>
-                <span className="ml-2 font-medium">{currentUser.displayName}</span>
+                <span className="ml-2 font-medium">{userToDisplay.displayName}</span>
               </div>
             )}
           </div>

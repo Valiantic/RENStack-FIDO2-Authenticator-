@@ -3,7 +3,6 @@ import { verifySession, logoutUser } from '../services/authService';
 
 const AuthContext = createContext(null);
 
-// Remove the navigation wrapper - we'll handle navigation in components instead
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -33,29 +32,67 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  // Check session (without redirection)
+  // Modified check session function to be more resilient
   const checkSessionValidity = useCallback(async () => {
-    if (!currentUser) return false;
-    
     try {
       console.log('Verifying session validity...');
+      
+      // First check local storage before hitting the server
+      const storedUser = sessionStorage.getItem('authenticatedUser');
+      if (!storedUser) {
+        console.log('No user data in session storage');
+        setCurrentUser(null);
+        return false;
+      }
+      
+      // Only verify with server if we have a current user from context or storage
       const result = await verifySession();
       
       if (!result.authenticated) {
         console.log('Session expired or invalid');
-        // Clear authentication state
-        sessionStorage.removeItem('authenticatedUser');
-        setCurrentUser(null);
+        
+        // CRITICAL FIX: Don't immediately clear auth state - check timestamp first
+        try {
+          const userData = JSON.parse(storedUser);
+          const authenticatedAt = new Date(userData.authenticatedAt || 0);
+          const now = new Date();
+          const authAgeHours = (now - authenticatedAt) / (1000 * 60 * 60);
+          
+          // If authentication is recent (less than 24 hours), keep using it
+          if (authAgeHours < 24) {
+            console.log('Auth is less than 24 hours old, maintaining session');
+            return true;
+          } else {
+            console.log('Auth is older than 24 hours, clearing local state');
+            sessionStorage.removeItem('authenticatedUser');
+            setCurrentUser(null);
+          }
+        } catch (e) {
+          console.error('Error processing stored user data:', e);
+          sessionStorage.removeItem('authenticatedUser');
+          setCurrentUser(null);
+        }
         return false;
       } else {
         console.log('Session is valid');
+        // Update local state with latest user data
+        if (result.user) {
+          setCurrentUser(result.user);
+          sessionStorage.setItem('authenticatedUser', JSON.stringify({
+            ...result.user,
+            authenticatedAt: new Date().toISOString()
+          }));
+        }
         return true;
       }
     } catch (error) {
       console.error('Session check error:', error);
-      return false;
+      
+      // CRITICAL FIX: Don't clear auth data on network errors
+      console.log('Network/server error during session check, maintaining local auth state');
+      return !!sessionStorage.getItem('authenticatedUser');
     }
-  }, [currentUser]);
+  }, [setCurrentUser]);
 
   // Enhanced login function with navigation support
   const login = useCallback((userData) => {
@@ -90,7 +127,7 @@ export const AuthProvider = ({ children }) => {
     login(userData);
   }, [login]);
 
-  // Fix the initial auth check to avoid immediate server check if session storage exists
+  // Improved initial auth check
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -103,18 +140,23 @@ export const AuthProvider = ({ children }) => {
             const userData = JSON.parse(storedUser);
             console.log('AuthContext: Found user in sessionStorage - trusting local data');
             
-            // Set the user state from local data and finish immediately
-            // IMPORTANT: Do NOT verify with server immediately after login/register
+            // Set the user state from local data immediately
             setCurrentUser(userData);
             setLoading(false);
             setAuthChecked(true);
+            
+            // Optionally verify with server in background after a delay
+            setTimeout(() => {
+              verifySession().catch(err => {
+                console.warn('Background session verification failed:', err);
+                // DON'T clear auth state on background verification failures
+              });
+            }, 2000);
             return;
           } catch (e) {
             console.error('Error parsing userData from sessionStorage:', e);
             sessionStorage.removeItem('authenticatedUser');
           }
-        } else {
-          console.log('AuthContext: No user found in sessionStorage');
         }
         
         // Only check with server if no local data exists

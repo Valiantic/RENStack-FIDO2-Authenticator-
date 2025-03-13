@@ -5,12 +5,11 @@ import Login from './components/Login';
 import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 
-// Fixed ProtectedRoute with delay before server verification
+// Fixed ProtectedRoute with proper hook usage
 const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated, loading, currentUser } = useAuth();
+  const { isAuthenticated, loading, currentUser, checkSessionValidity } = useAuth();
   const navigate = useNavigate();
   const [localLoading, setLocalLoading] = useState(true);
-  const [serverCheckComplete, setServerCheckComplete] = useState(false);
   
   // Check auth state from sessionStorage
   const checkSessionStorage = useCallback(() => {
@@ -46,23 +45,19 @@ const ProtectedRoute = ({ children }) => {
   useEffect(() => {
     if (!loading && !localLoading && isAuthenticated) {
       // Give the server time to establish the session before checking
-      const serverCheckTimer = setTimeout(async () => {
-        try {
-          // This is only for verification, not for redirecting
-          console.log('ProtectedRoute: Verifying session with server after delay');
-          const { checkSessionValidity } = useAuth();
-          await checkSessionValidity();
-        } catch (error) {
-          console.warn('Server verification error (non-blocking):', error);
-        } finally {
-          setServerCheckComplete(true);
-        }
+      const serverCheckTimer = setTimeout(() => {
+        // FIXED: Don't call useAuth() inside useEffect callback - use the one from component scope
+        checkSessionValidity().catch(err => {
+          console.warn('Server verification error (non-blocking):', err);
+          // IMPORTANT: Don't redirect on verification failure
+        });
       }, 1000); // 1 second delay before server check
       
       return () => clearTimeout(serverCheckTimer);
     }
-  }, [loading, localLoading, isAuthenticated]);
+  }, [loading, localLoading, isAuthenticated, checkSessionValidity]);
   
+  // Show loading indicator while checking auth
   if (loading || localLoading) {
     return <div className="flex justify-center items-center h-screen">
       <div className="text-xl">Loading dashboard...</div>
