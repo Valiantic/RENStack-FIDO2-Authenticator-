@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { getRegistrationOptions, sendRegistrationResponse, createCredential } from '../services/authService';
+import { getRegistrationOptions, sendRegistrationResponse, createCredential, verifyRegistration } from '../services/authService';
 import api from '../services/api'; // Import the api instance
 
 const Register = () => {
@@ -61,17 +61,29 @@ const Register = () => {
         }
 
         if (finalizeRes.status === 'ok') {
-            setMessage('Registration successful!');
+            setMessage('Registration successful! Verifying passkey...');
             
-            // Use the user object directly from the response if available
-            const userData = finalizeRes.user || {
-                username: username,
-                displayName: displayName
-            };
+            // New step: Verify the registration
+            const verificationResult = await verifyRegistration(
+                credentialResponse.id, 
+                username
+            );
             
-            // Pass user data to the context
-            register(userData);
-            navigate('/dashboard');
+            if (verificationResult.status === 'ok') {
+                setMessage('Registration and verification successful!');
+                
+                // Use the user object from the verification response
+                const userData = verificationResult.user || {
+                    username: username,
+                    displayName: displayName
+                };
+                
+                // Pass user data to the context
+                register(userData);
+                navigate('/dashboard');
+            } else {
+                throw new Error('Verification failed: ' + (verificationResult.message || 'Unknown error'));
+            }
         } else {
             throw new Error('Registration failed: The operation either timed out');
         }

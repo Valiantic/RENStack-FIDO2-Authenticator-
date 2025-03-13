@@ -235,6 +235,72 @@ router.post('/register/response', methodCheck, async (req, res) => {
   }
 });
 
+// Additional verification after registration
+router.post('/register/verify', methodCheck, async (req, res) => {
+  try {
+    const { credentialId, username } = req.body;
+    
+    if (!credentialId || !username) {
+      return res.status(400).json({ 
+        error: 'Missing required parameters',
+        message: 'Both credentialId and username are required'
+      });
+    }
+    
+    // Verify the session is authenticated and matches the username
+    if (!req.session.authenticated || req.session.username !== username) {
+      return res.status(401).json({ 
+        error: 'Authentication required',
+        message: 'User session is not properly authenticated'
+      });
+    }
+    
+    // Find the user and credential
+    const user = await User.findOne({ 
+      where: { username },
+      include: [{ 
+        model: Credential,
+        where: { credentialId }
+      }]
+    });
+    
+    if (!user || !user.Credentials || user.Credentials.length === 0) {
+      return res.status(404).json({ 
+        error: 'Verification failed',
+        message: 'Credential not found or not associated with user'
+      });
+    }
+    
+    // Perform additional verification if needed
+    // For example: check if the credential is still valid, not revoked, etc.
+    
+    // Update credential status if needed
+    await user.Credentials[0].update({ verified: true });
+    
+    // Return success with user details
+    res.json({
+      status: 'ok',
+      message: 'Passkey successfully verified',
+      user: {
+        id: user.id,
+        username: user.username,
+        displayName: user.displayName,
+        credential: {
+          id: user.Credentials[0].credentialId,
+          verified: true
+        }
+      }
+    });
+    
+  } catch (err) {
+    console.error('Passkey verification error:', err);
+    res.status(500).json({
+      error: 'Verification failed',
+      message: err.message
+    });
+  }
+});
+
 // Add logout route
 router.post('/logout', (req, res) => {
   req.session.destroy((err) => {

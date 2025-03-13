@@ -28,6 +28,20 @@ export const sendRegistrationResponse = async (credentialResponse) => {
   }
 };
 
+// New function to verify registration after credential creation
+export const verifyRegistration = async (credentialId, username) => {
+  try {
+    const response = await api.post('/auth/register/verify', { 
+      credentialId, 
+      username 
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Registration verification failed:', error);
+    throw error;
+  }
+};
+
 // Login services
 export const getLoginOptions = async (username) => {
   try {
