@@ -182,6 +182,43 @@ app.get('/db-status', async (req, res) => {
   }
 });
 
+// Add a user diagnostic endpoint to check credentials
+app.get('/check-user', async (req, res) => {
+  try {
+    const { username } = req.query;
+    
+    if (!username) {
+      return res.status(400).json({ error: 'Username parameter is required' });
+    }
+    
+    const user = await User.findOne({ where: { username } });
+    
+    if (!user) {
+      return res.json({
+        exists: false,
+        message: 'User not found'
+      });
+    }
+    
+    const credentials = await Credential.findAll({ where: { userId: user.id } });
+    
+    res.json({
+      exists: true,
+      username: user.username,
+      displayName: user.displayName,
+      credentialCount: credentials.length,
+      credentials: credentials.map(c => ({
+        id: c.id, 
+        credentialId: c.credentialId.substring(0,10) + '...',
+        created: c.createdAt
+      }))
+    });
+  } catch (err) {
+    console.error('User check error:', err);
+    res.status(500).json({ error: 'Failed to check user', message: err.message });
+  }
+});
+
 // Basic test route
 app.get('/', (req, res) => {
     res.send('FIDO2 Authenticator Server is running.');

@@ -502,11 +502,32 @@ router.post('/login', async (req, res) => {
     const { username } = req.body;
     if (!username) return res.status(400).json({ error: 'Missing username' });
 
-    // Fetch user's registered credentials
-    const user = await User.findOne({ where: { username }, include: Credential });
-    if (!user || !user.Credentials || user.Credentials.length === 0) {
-      return res.status(400).json({ error: 'User not found or no credentials registered' });
+    // Enhanced logging for debugging
+    console.log(`Login attempt for username: "${username}"`);
+
+    // First check if the user exists
+    const user = await User.findOne({ where: { username } });
+    if (!user) {
+      console.log(`User not found: "${username}"`);
+      return res.status(400).json({ error: 'User not found' });
     }
+
+    console.log(`User found: ${username} (ID: ${user.id})`);
+
+    // Then check for credentials separately with detailed logging
+    const credentials = await Credential.findAll({ where: { userId: user.id } });
+    
+    console.log(`Found ${credentials.length} credentials for user ${username}`);
+    
+    if (!credentials || credentials.length === 0) {
+      console.log(`No credentials found for user: "${username}"`);
+      return res.status(400).json({ error: 'No credentials registered for this user' });
+    }
+
+    // Log the credentials (without sensitive info)
+    credentials.forEach((cred, i) => {
+      console.log(`Credential ${i+1}: ID=${cred.id}, CredentialId=${cred.credentialId.substring(0, 10)}...`);
+    });
 
     // Generate assertion options
     const assertionOptions = await fido2.assertionOptions();
@@ -515,10 +536,10 @@ router.post('/login', async (req, res) => {
     assertionOptions.challenge = bufferToBase64url(assertionOptions.challenge);
 
     // Format credential IDs
-    assertionOptions.allowCredentials = user.Credentials.map(cred => ({
+    assertionOptions.allowCredentials = credentials.map(cred => ({
       id: cred.credentialId,
       type: 'public-key',
-      transports: ['internal']
+      transports: ['internal', 'hybrid', 'usb'] // Support more transport types
     }));
 
     // Store in session
@@ -550,7 +571,24 @@ router.all('/login', (req, res, next) => {
 router.post('/login/response', methodCheck, async (req, res) => {
   try {
     console.log('Login response received:', req.body);
-    const { id, rawId, type, response } = req.body;
+    
+    // Support both direct and nested credential format
+    const { credential: credentialFromBody } = req.body;  // Rename to avoid redeclaration
+    let id, rawId, type, response;
+    
+    if (credentialFromBody) {
+      // Format where credential is nested
+      id = credentialFromBody.id;
+      rawId = credentialFromBody.rawId || credentialFromBody.id;
+      type = credentialFromBody.type;
+      response = credentialFromBody.response;
+    } else {
+      // Format where properties are at top level
+      id = req.body.id;
+      rawId = req.body.rawId || req.body.id;
+      type = req.body.type;
+      response = req.body.response;
+    }
 
     if (!req.session?.challenge) {
       throw new Error('No challenge found in session');
@@ -561,17 +599,49 @@ router.post('/login/response', methodCheck, async (req, res) => {
       throw new Error('No username found in session');
     }
 
-    // Get user and credential
+    // Get user and all associated credentials
     const user = await User.findOne({
-      where: { username },
-      include: [{ model: Credential }]
+      where: { username }
     });
 
-    if (!user || !user.Credentials.length) {
+    if (!user) {
+      throw new Error('User not found');
+    }
+    
+    // Find the matching credential by ID
+    const credentials = await Credential.findAll({
+      where: { userId: user.id }
+    });
+    
+    console.log(`Found ${credentials.length} credentials for user ${username}`);
+    
+    if (!credentials || credentials.length === 0) {
       throw new Error('No credentials found for user');
     }
-
-    const credential = user.Credentials[0];
+    
+    // Find the correct credential for this authentication
+    let matchingCredential;  // Changed variable name here
+    for (const cred of credentials) {
+      console.log(`Comparing: "${rawId}" with "${cred.credentialId}"`);
+      if (cred.credentialId === rawId || cred.credentialId === id) {
+        matchingCredential = cred;
+        break;
+      }
+    }
+    
+    if (!matchingCredential) {
+      console.error('No matching credential ID found among user credentials');
+      throw new Error('Invalid credential for this user');
+    }
+    
+    console.log('Using credential:', matchingCredential.id, matchingCredential.credentialId.substring(0, 10) + '...');
+    
+    // Handle placeholder key from direct registration
+    if (matchingCredential.publicKey === "PLACEHOLDER_KEY") {
+      console.log('Warning: Using placeholder key from direct registration');
+      // In production, you shouldn't accept placeholder keys
+      // For this demo, we'll proceed anyway
+    }
 
     // Create assertion response object with proper Buffer conversions
     const assertionResponse = {
@@ -599,15 +669,15 @@ router.post('/login/response', methodCheck, async (req, res) => {
       challenge: base64URLToBuffer(req.session.challenge),
       origin: origin,
       factor: 'either',
-      publicKey: credential.publicKey,
-      prevCounter: credential.counter,
+      publicKey: matchingCredential.publicKey,  // Use the renamed variable here
+      prevCounter: matchingCredential.counter,  // Use the renamed variable here
       rpId: rpId,
       userHandle: null,
       userVerification: "preferred"
     });
 
     // Update counter
-    await credential.update({ counter: result.authnrData.get('counter') });
+    await matchingCredential.update({ counter: result.authnrData.get('counter') });  // Use the renamed variable here
 
     // Clear session challenge and set authenticated
     req.session.challenge = null;
@@ -675,7 +745,6 @@ router.get('/verify-session', async (req, res) => {
 router.post("/register-direct", async (req, res) => {
   try {
     console.log('==== DIRECT REGISTRATION ENDPOINT CALLED ====');
-    console.log('Request body:', JSON.stringify(req.body, null, 2));
     
     // Extract the credential depending on format
     let rawId, response, type;
@@ -701,32 +770,58 @@ router.post("/register-direct", async (req, res) => {
         error: "Username required"
       });
     }
+
+    // Ensure we have a credential ID
+    if (!rawId) {
+      return res.status(400).json({
+        success: false,
+        message: "Registration failed",
+        error: "Missing credential ID"
+      });
+    }
     
-    console.log(`Creating/finding user: ${username}`);
+    console.log(`Creating/finding user: "${username}" with credential ID: "${rawId.substring(0,10)}..."`);
     
     try {
-      // Create or find the user
-      let user = await User.findOne({ where: { username } });
-      if (!user) {
-        user = await User.create({
-          username,
-          displayName
+      // Start a transaction for atomicity
+      const result = await sequelize.transaction(async (t) => {
+        // Create or find the user
+        let user = await User.findOne({ where: { username }, transaction: t });
+        if (!user) {
+          user = await User.create({
+            username,
+            displayName
+          }, { transaction: t });
+          console.log('Created new user:', user.id);
+        } else {
+          console.log('Found existing user:', user.id);
+        }
+        
+        // Check if credential already exists
+        const existingCred = await Credential.findOne({
+          where: { credentialId: rawId },
+          transaction: t
         });
-        console.log('Created new user:', user.id);
-      } else {
-        console.log('Found existing user:', user.id);
-      }
-      
-      // FIXED: Create credential record
-      console.log('Creating credential record with ID:', rawId);
-      const credential = await Credential.create({
-        userId: user.id,
-        credentialId: rawId,
-        publicKey: "PLACEHOLDER_KEY", // Will be updated with real key if verification happens later
-        counter: 0
+        
+        if (existingCred) {
+          console.log('Credential already exists for this or another user');
+          // Update it to belong to this user
+          await existingCred.update({ userId: user.id }, { transaction: t });
+          return { user, credential: existingCred };
+        }
+        
+        // Create credential record
+        console.log('Creating new credential record with ID:', rawId);
+        const credential = await Credential.create({
+          userId: user.id,
+          credentialId: rawId,
+          publicKey: "PLACEHOLDER_KEY", // Will be updated with real key if verification happens later
+          counter: 0
+        }, { transaction: t });
+        
+        console.log('Credential saved successfully with ID:', credential.id);
+        return { user, credential };
       });
-      
-      console.log('Credential saved successfully:', credential.id);
       
       // Set session as authenticated
       req.session.authenticated = true;
@@ -739,9 +834,9 @@ router.post("/register-direct", async (req, res) => {
         success: true, 
         message: "Registration successful",
         user: {
-          id: user.id,
-          username: user.username,
-          displayName: user.displayName
+          id: result.user.id,
+          username: result.user.username,
+          displayName: result.user.displayName
         }
       });
     } catch (dbError) {

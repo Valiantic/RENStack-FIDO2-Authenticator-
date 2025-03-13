@@ -127,11 +127,41 @@ export const getLoginOptions = async (username) => {
 
 export const sendLoginResponse = async (assertionResponse) => {
   try {
-    const response = await api.post('/auth/login/response', assertionResponse);
+    // Support both formats - send credential as top-level properties and also as a credential object
+    const payload = {
+      ...assertionResponse,  // Include properties at top level for backward compatibility
+      credential: assertionResponse  // Also nest under credential for new format
+    };
+    
+    console.log('Sending login response to server:', {
+      id: payload.id,
+      type: payload.type,
+      hasResponse: !!payload.response
+    });
+    
+    const response = await api.post('/auth/login/response', payload);
     return response.data;
   } catch (error) {
     console.error('Login response submission failed:', error);
-    throw error;
+    console.error('Error details:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status
+    });
+    
+    // Enhanced error handling
+    let errorMessage = 'Login failed: ';
+    if (error.response?.data?.error) {
+      errorMessage += error.response.data.error;
+    } else if (error.response?.data?.message) {
+      errorMessage += error.response.data.message;
+    } else if (error.message) {
+      errorMessage += error.message;
+    } else {
+      errorMessage += 'Unknown error occurred';
+    }
+    
+    throw new Error(errorMessage);
   }
 };
 
