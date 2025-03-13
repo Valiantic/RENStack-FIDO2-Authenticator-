@@ -92,8 +92,16 @@ export const getLoginOptions = async (username) => {
   try {
     console.log('Requesting login options for username:', username);
     
+    // Store username for fallback
+    localStorage.setItem('temp_username', username);
+    
     // Ensure we're explicitly using POST method
     const response = await api.post('/auth/login', { username });
+    
+    // Store challenge in local storage as backup
+    if (response.data._challengeBackup) {
+      localStorage.setItem('login_challenge_backup', response.data._challengeBackup);
+    }
     
     // Store session identifier if provided by server
     if (response.data.sessionId) {
@@ -126,10 +134,17 @@ export const getLoginOptions = async (username) => {
 
 export const sendLoginResponse = async (assertionResponse) => {
   try {
-    // Support both formats - send credential as top-level properties and also as a credential object
+    // Get backup values from localStorage
+    const challengeBackup = localStorage.getItem('login_challenge_backup');
+    const usernameBackup = localStorage.getItem('temp_username');
+    
+    // Support both formats with backup values
     const payload = {
-      ...assertionResponse,  // Include properties at top level for backward compatibility
-      credential: assertionResponse  // Also nest under credential for new format
+      ...assertionResponse,
+      credential: assertionResponse,
+      _challengeBackup: challengeBackup,
+      username: usernameBackup,
+      sessionId: localStorage.getItem('auth_session_id')
     };
     
     console.log('Sending login response to server:', {
@@ -148,6 +163,9 @@ export const sendLoginResponse = async (assertionResponse) => {
       if (response.data.user) {
         sessionStorage.setItem('authenticatedUser', JSON.stringify(response.data.user));
       }
+      
+      // Remove temporary challenge backup
+      localStorage.removeItem('login_challenge_backup');
       
       return response.data;
     } catch (loginError) {

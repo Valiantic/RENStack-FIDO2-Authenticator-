@@ -111,13 +111,30 @@ router.post('/register', async (req, res) => {
 
     console.log(`Using RP ID: ${rpId}`);
 
-    // Store in session
+    // Store challenge in both session and explicitly return it to client for backup
     req.session.challenge = registrationOptions.challenge;
     req.session.username = username;
     req.session.displayName = displayName;
+    
+    // Force save session
+    await new Promise((resolve, reject) => {
+      req.session.save(err => {
+        if (err) {
+          console.error('Failed to save session:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
 
-    console.log('Registration options generated:', registrationOptions);
-    res.json(registrationOptions);
+    console.log('Registration options generated. Session ID:', req.sessionID);
+    res.json({
+      ...registrationOptions,
+      sessionId: req.sessionID,
+      // Return challenge in response for client-side backup
+      _challengeBackup: registrationOptions.challenge
+    });
   } catch (err) {
     console.error('Error creating registration options:', err);
     res.status(500).json({ 
@@ -130,15 +147,36 @@ router.post('/register', async (req, res) => {
 // New endpoint to store the challenge in the session
 router.post('/store-challenge', async (req, res) => {
   try {
-    const { challenge } = req.body;
+    const { challenge, sessionId } = req.body;
     if (!challenge) {
       return res.status(400).json({ error: 'Missing challenge' });
     }
 
+    // Store challenge in session
     req.session.challenge = challenge;
-    await req.session.save();
-    console.log('Challenge stored in session:', challenge);
-    res.json({ status: 'ok', message: 'Challenge stored successfully' });
+    
+    // Force save session
+    await new Promise((resolve, reject) => {
+      req.session.save(err => {
+        if (err) {
+          console.error('Failed to save session:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+    
+    console.log('Challenge stored in session:', {
+      sessionId: req.sessionID,
+      challenge: challenge.substring(0, 10) + '...'
+    });
+    
+    res.json({ 
+      status: 'ok', 
+      message: 'Challenge stored successfully',
+      sessionId: req.sessionID
+    });
   } catch (err) {
     console.error('Error storing challenge:', err);
     res.status(500).json({ error: 'Failed to store challenge', message: err.message });
@@ -383,15 +421,34 @@ router.post('/login', async (req, res) => {
         transports: ['internal', 'hybrid', 'usb']
       }));
       
-      // Store in session
+      // Store in session and force save
       req.session.challenge = assertionOptions.challenge;
       req.session.username = username;
-      await req.session.save();
       
-      console.log('[DEBUG] Sending assertion options with credentials:', 
-        assertionOptions.allowCredentials.map(c => ({id: c.id.substring(0, 10) + "..."})));
+      await new Promise((resolve, reject) => {
+        req.session.save(err => {
+          if (err) {
+            console.error('Failed to save session:', err);
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
       
-      res.json(assertionOptions);
+      console.log('[DEBUG] Session after storing challenge:', {
+        id: req.sessionID,
+        challenge: assertionOptions.challenge.substring(0, 10) + '...',
+        username: req.session.username
+      });
+      
+      // Include the challenge in the response for client backup
+      res.json({
+        ...assertionOptions,
+        sessionId: req.sessionID,
+        // Return challenge in response for client-side backup
+        _challengeBackup: assertionOptions.challenge
+      });
     } catch (dbErr) {
       console.error('[ERROR] Database error while retrieving credentials:', dbErr);
       return res.status(500).json({ 
@@ -472,15 +529,29 @@ router.post('/login-direct', async (req, res) => {
 router.post('/login/response', methodCheck, async (req, res) => {
   try {
     console.log('Login response received:', req.body);
-    const { id, rawId, type, response } = req.body;
+    const { id, rawId, type, response, _challengeBackup } = req.body;
 
-    if (!req.session?.challenge) {
-      throw new Error('No challenge found in session');
+    // Get challenge from session or fallback to client-provided backup
+    let challenge = req.session?.challenge;
+    let username = req.session?.username;
+    
+    // Check for client-provided backup values if session values are missing
+    if (!challenge && _challengeBackup) {
+      console.log('[DEBUG] Using client-provided challenge backup');
+      challenge = _challengeBackup;
+    }
+    
+    if (!username && req.body.username) {
+      console.log('[DEBUG] Using client-provided username backup');
+      username = req.body.username;
     }
 
-    const username = req.session.username;
+    if (!challenge) {
+      throw new Error('No challenge found in session or request');
+    }
+
     if (!username) {
-      throw new Error('No username found in session');
+      throw new Error('No username found in session or request');
     }
 
     // Get user and credential
@@ -514,11 +585,11 @@ router.post('/login/response', methodCheck, async (req, res) => {
     console.log('Verifying login with:', {
       origin: origin,
       rpId: rpId,
-      challenge: req.session.challenge.substring(0, 10) + '...'
+      challenge: challenge.substring(0, 10) + '...'
     });
 
     const result = await fido2.assertionResult(assertionResponse, {
-      challenge: base64URLToBuffer(req.session.challenge),
+      challenge: base64URLToBuffer(challenge),
       origin: origin,
       factor: 'either',
       publicKey: credential.publicKey,

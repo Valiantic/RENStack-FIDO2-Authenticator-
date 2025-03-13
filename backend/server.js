@@ -64,11 +64,11 @@ app.use(helmet({
     crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }
 }));
 
-// Session configuration
-app.use(session({
+// Enhanced session configuration for cross-domain support
+const sessionConfig = {
     secret: process.env.SESSION_SECRET || 'fallback-secret-for-development-only',
     resave: false,
-    saveUninitialized: true,
+    saveUninitialized: false, // changed to false to prevent empty sessions
     name: 'fido2session',
     cookie: {
         secure: process.env.NODE_ENV === 'production',
@@ -77,7 +77,36 @@ app.use(session({
         httpOnly: true,
         path: '/'
     }
-}));
+};
+
+// Add domain to cookie in production
+if (process.env.NODE_ENV === 'production' && process.env.COOKIE_DOMAIN) {
+    sessionConfig.cookie.domain = process.env.COOKIE_DOMAIN;
+}
+
+// Use session middleware with enhanced config
+app.use(session(sessionConfig));
+
+// Add explicit session save middleware
+app.use((req, res, next) => {
+    const oldEnd = res.end;
+    
+    // Override res.end to ensure session is saved before responding
+    res.end = function() {
+        if (req.session && req.session.save) {
+            req.session.save(err => {
+                if (err) {
+                    console.error('Session save error:', err);
+                }
+                oldEnd.apply(res, arguments);
+            });
+        } else {
+            oldEnd.apply(res, arguments);
+        }
+    };
+    
+    next();
+});
 
 // Session tracking middleware
 app.use((req, res, next) => {

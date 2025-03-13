@@ -36,10 +36,23 @@ const Login = () => {
     }
   }, [redirectCountdown, navigate]);
 
+  // Add this effect to check for forced redirect flag
+  useEffect(() => {
+    const forceRedirect = sessionStorage.getItem('force_auth_redirect');
+    if (forceRedirect) {
+      console.log('Found forced redirect flag:', forceRedirect);
+      sessionStorage.removeItem('force_auth_redirect');
+      navigate(forceRedirect, { replace: true });
+    }
+  }, [navigate]);
+
   // WebAuthn authentication - primary login method
   async function handleWebAuthnAuthentication(username) {
     try {
       setMessage('Starting WebAuthn authentication...');
+      
+      // Store username in localStorage for backup
+      localStorage.setItem('temp_username', username);
       
       // Get assertion options from server
       const assertionOptions = await getLoginOptions(username);
@@ -49,6 +62,12 @@ const Login = () => {
       const assertionResponse = await getCredential(assertionOptions);
       
       setMessage('Verifying your passkey...');
+      
+      // Add backup challenge to the response
+      if (localStorage.getItem('login_challenge_backup')) {
+        assertionResponse._challengeBackup = localStorage.getItem('login_challenge_backup');
+      }
+      
       // Send assertion to server
       const verificationRes = await sendLoginResponse(assertionResponse);
       
@@ -63,14 +82,27 @@ const Login = () => {
         setMessage('Login successful! Redirecting to dashboard in 3 seconds...');
         setRedirectCountdown(3);
         
-        // Try immediate navigation
+        // Try multiple navigation methods for reliability
         try {
+          // Store a flag in sessionStorage to force redirect on page refresh
+          sessionStorage.setItem('force_auth_redirect', 'dashboard');
+          
+          // Immediately try navigation via React Router
           setTimeout(() => {
             console.log('Attempting navigation to dashboard');
             navigate('/dashboard', { replace: true });
+            
+            // Set a backup redirect using window.location after a delay
+            setTimeout(() => {
+              if (window.location.pathname !== '/dashboard') {
+                console.log('Fallback redirect to dashboard');
+                window.location.href = '/dashboard';
+              }
+            }, 1000);
           }, 100);
         } catch (navError) {
           console.error('Navigation error:', navError);
+          window.location.href = '/dashboard';
         }
       } else {
         throw new Error(verificationRes.message || 'Login failed');
