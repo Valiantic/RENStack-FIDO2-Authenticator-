@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getRegistrationOptions, sendRegistrationResponse, createCredential, verifyRegistration } from '../services/authService';
-import api from '../services/api'; // Import the api instance
+import api from '../services/api'; 
 
 const Register = () => {
   const navigate = useNavigate();
@@ -22,51 +22,43 @@ const Register = () => {
         setMessage('Starting registration...');
         setIsRegistering(true);
         
-        // Check session before registration options
         console.log('Checking session before registration...');
         const sessionCheckBefore = await api.get('/session-check');
         console.log('Session before registration:', sessionCheckBefore.data);
 
-        // Get registration options from server
+        // GET REGISTRATION OPTIONS FROM SERVER 
         const credentialOptions = await getRegistrationOptions(username, displayName);
         
-        // Store the challenge in the session
         console.log('Storing challenge in session...');
         await api.post('/auth/store-challenge', { challenge: credentialOptions.challenge });
         console.log('Challenge stored in session successfully.');
         
-        // Log session after storing challenge
         const sessionCheckAfterStoreChallenge = await api.get('/session-check');
         console.log('Session after storing challenge:', sessionCheckAfterStoreChallenge.data);
         
         setMessage('Please follow the instructions on your authenticator...');
         
-        // Create credentials 
         const credentialResponse = await createCredential(credentialOptions);
 
         setMessage('Sending registration data to server...');
         console.log('Credential response to be sent:', credentialResponse);
         
         try {
-            // Send credential to server with explicit error handling
             const finalizeRes = await sendRegistrationResponse(credentialResponse);
 
-            // Check session after registration
             console.log('Checking session after registration...');
             const sessionCheckAfter = await api.get('/session-check');
             console.log('Session after registration:', sessionCheckAfter.data);
 
-            console.log('Server response:', finalizeRes); // Log the full response for debugging
+            console.log('Server response:', finalizeRes); 
 
             if (finalizeRes.error || finalizeRes.success === false) {
                 throw new Error(finalizeRes.error || finalizeRes.message || 'Unknown registration error');
             }
 
-            // Check for success in both old and new response formats
             if (finalizeRes.status === 'ok' || finalizeRes.success === true) {
                 setMessage('Registration successful! Redirecting to dashboard...');
                 
-                // Ensure we have a complete user object with ID
                 const userData = {
                   id: finalizeRes.user?.id || Date.now(),
                   username: finalizeRes.user?.username || username,
@@ -75,20 +67,15 @@ const Register = () => {
                 
                 console.log('Registration successful! User data:', userData);
                 
-                // Store auth data first, before any navigation attempts
                 sessionStorage.setItem('authenticatedUser', JSON.stringify(userData));
                 localStorage.setItem('authInProgress', 'true');
                 
-                // Update context state
                 register(userData);
                 
-                // CRITICAL FIX: Add deliberate delay before navigation
                 await new Promise(resolve => setTimeout(resolve, 500));
                 
-                // Try React Router navigation first with replace option
                 navigate('/dashboard', { replace: true });
                 
-                // Only use fallback if navigation fails
                 setTimeout(() => {
                   if (window.location.pathname !== '/dashboard') {
                     console.log('Fallback: forcing navigation to dashboard');
@@ -101,7 +88,7 @@ const Register = () => {
         } catch (responseError) {
             console.error('Error during registration submission:', responseError);
             setMessage(`Registration failed: ${responseError.message}`);
-            return; // Exit early on response error
+            return; 
         }
     } catch (error) {
         console.error('Registration error details:', {

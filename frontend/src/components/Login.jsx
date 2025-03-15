@@ -13,7 +13,6 @@ const Login = () => {
   const [redirectCountdown, setRedirectCountdown] = useState(null);
   const [authSuccess, setAuthSuccess] = useState(false);
 
-  // Check if user is already logged in and redirect if needed
   useEffect(() => {
     if (isAuthenticated && currentUser) {
       console.log('User already authenticated, redirecting to dashboard');
@@ -21,7 +20,6 @@ const Login = () => {
     }
   }, [isAuthenticated, currentUser, navigate]);
 
-  // Handle redirect countdown
   useEffect(() => {
     if (redirectCountdown !== null) {
       if (redirectCountdown <= 0) {
@@ -36,7 +34,6 @@ const Login = () => {
     }
   }, [redirectCountdown, navigate]);
 
-  // Add this effect to check for forced redirect flag
   useEffect(() => {
     const forceRedirect = sessionStorage.getItem('force_auth_redirect');
     if (forceRedirect) {
@@ -46,53 +43,42 @@ const Login = () => {
     }
   }, [navigate]);
 
-  // Fixed WebAuthn authentication function
   async function handleWebAuthnAuthentication(username) {
     try {
       setMessage('Starting WebAuthn authentication...');
       
-      // Store username in localStorage for backup
       localStorage.setItem('temp_username', username);
       
-      // Get assertion options from server
       const assertionOptions = await getLoginOptions(username);
       
-      // Get credential from authenticator
       setMessage('Please follow the instructions on your authenticator device...');
       const assertionResponse = await getCredential(assertionOptions);
       
       setMessage('Verifying your passkey...');
       
-      // Add backup challenge to the response
       if (localStorage.getItem('login_challenge_backup')) {
         assertionResponse._challengeBackup = localStorage.getItem('login_challenge_backup');
       }
-      
-      // Send assertion to server
+  
       const verificationRes = await sendLoginResponse(assertionResponse);
       
       if (verificationRes.status === 'ok') {
         console.log('Authentication successful!', verificationRes);
         
-        // Ensure we have a valid user object
         const userData = {
           id: verificationRes.user?.id || Date.now(),
           username: verificationRes.user?.username || username,
           displayName: verificationRes.user?.displayName || username
         };
         
-        // CRITICAL FIX: Set session storage FIRST and immediately
         sessionStorage.setItem('authenticatedUser', JSON.stringify(userData));
         localStorage.setItem('authInProgress', 'true');
         
-        // Set auth state in context
         login(userData);
         
-        // Show success message
         setAuthSuccess(true);
         setMessage('Login successful! Redirecting to dashboard...');
         
-        // FORCE REDIRECT: Use hardcoded delay and window.location for reliability
         setTimeout(() => {
           console.log('Login successful, forcing navigation to dashboard');
           window.location.href = '/dashboard'; 
@@ -101,7 +87,6 @@ const Login = () => {
         throw new Error(verificationRes.message || 'Login failed');
       }
     } catch (error) {
-      // Error handling for specific cases
       if (error.message?.includes('User not found')) {
         throw new Error(`User "${username}" not found. Please register first.`);
       } else if (error.message?.includes('No credentials registered')) {
@@ -112,7 +97,6 @@ const Login = () => {
     }
   }
 
-  // Main login handler - uses WebAuthn by default
   async function handleLogin(username) {
     if (!username) {
       setMessage('Please enter your username first');
@@ -124,7 +108,6 @@ const Login = () => {
     setRedirectCountdown(null);
     
     try {
-      // Try to do WebAuthn authentication directly
       await handleWebAuthnAuthentication(username);
     } catch (error) {
       console.error('WebAuthn authentication error:', error);
@@ -132,8 +115,7 @@ const Login = () => {
       setIsLoggingIn(false);
     }
   }
-  
-  // Manual redirect function if automatic redirect fails
+
   function handleManualRedirect() {
     window.location.href = '/dashboard';
   }

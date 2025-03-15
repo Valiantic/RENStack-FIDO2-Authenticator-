@@ -1,16 +1,14 @@
 import api from './api';
 import { arrayBufferToBase64URL, base64URLToBuffer } from '../utils/bufferUtils';
 
-// Registration services
+// REGISTRATION SERVICE
 export const getRegistrationOptions = async (username, displayName) => {
   try {
-    // Store credentials locally as fallback for direct registration
     localStorage.setItem('temp_username', username);
     localStorage.setItem('temp_displayName', displayName);
     
     const response = await api.post('/auth/register', { username, displayName });
     
-    // Store session identifier if provided by server
     if (response.data.sessionId) {
       localStorage.setItem('auth_session_id', response.data.sessionId);
     }
@@ -26,14 +24,12 @@ export const sendRegistrationResponse = async (credentialResponse) => {
   try {
     console.log('Sending registration response to server:', credentialResponse);
     
-    // Support both formats - send credential as top-level properties and also as a credential object
     const payload = {
-      ...credentialResponse,  // Include properties at top level for backward compatibility
-      credential: credentialResponse  // Also nest under credential for new format
+      ...credentialResponse,  
+      credential: credentialResponse  
     };
     
     try {
-      // Try the original endpoint first
       const response = await api.post('/auth/register/response', payload);
       console.log('Registration response from server:', response.data);
       return response.data;
@@ -41,14 +37,12 @@ export const sendRegistrationResponse = async (credentialResponse) => {
       console.warn('Original registration endpoint failed, trying simplified endpoint:', originalError.message);
       
       try {
-        // If the original endpoint fails, try the simplified endpoint
         const simplifiedResponse = await api.post('/auth/register-simple', payload);
         console.log('Simplified registration response from server:', simplifiedResponse.data);
         return simplifiedResponse.data;
       } catch (simplifiedError) {
         console.warn('Simplified endpoint failed, trying direct endpoint:', simplifiedError.message);
         
-        // Last resort: try the direct registration endpoint with minimal WebAuthn verification
         const directResponse = await api.post('/auth/register-direct', {
           ...payload,
           username: localStorage.getItem('temp_username'),
@@ -67,13 +61,12 @@ export const sendRegistrationResponse = async (credentialResponse) => {
       headers: error.response?.headers
     });
     
-    // Enhanced error handling with more diagnostic info
     const errorMessage = error.response?.data?.error || error.response?.data?.message || error.message;
     throw new Error(`Registration failed: ${errorMessage}`);
   }
 };
 
-// New function to verify registration after credential creation
+
 export const verifyRegistration = async (credentialId, username) => {
   try {
     const response = await api.post('/auth/register/verify', { 
@@ -87,23 +80,20 @@ export const verifyRegistration = async (credentialId, username) => {
   }
 };
 
-// Login services
+// LOGIN SERVICE
 export const getLoginOptions = async (username) => {
   try {
     console.log('Requesting login options for username:', username);
     
-    // Store username for fallback
+
     localStorage.setItem('temp_username', username);
     
-    // Ensure we're explicitly using POST method
     const response = await api.post('/auth/login', { username });
     
-    // Store challenge in local storage as backup
     if (response.data._challengeBackup) {
       localStorage.setItem('login_challenge_backup', response.data._challengeBackup);
     }
     
-    // Store session identifier if provided by server
     if (response.data.sessionId) {
       localStorage.setItem('auth_session_id', response.data.sessionId);
     }
@@ -114,7 +104,6 @@ export const getLoginOptions = async (username) => {
       allowCredentials: response.data.allowCredentials?.map(c => ({id: c.id.substring(0, 10) + '...'}))
     });
     
-    // If there are no allowed credentials, this is an error state
     if (!response.data.allowCredentials || response.data.allowCredentials.length === 0) {
       throw new Error('No passkeys available for this user');
     }
@@ -123,7 +112,6 @@ export const getLoginOptions = async (username) => {
   } catch (error) {
     console.error('Login options request failed:', error);
     
-    // Handle specific errors
     if (error.response?.data?.error) {
       throw new Error(error.response.data.error);
     }
@@ -132,13 +120,12 @@ export const getLoginOptions = async (username) => {
   }
 };
 
+// SEND LOGIN RESPONSE 
 export const sendLoginResponse = async (assertionResponse) => {
   try {
-    // Get backup values from localStorage
     const challengeBackup = localStorage.getItem('login_challenge_backup');
     const usernameBackup = localStorage.getItem('temp_username');
     
-    // Support both formats with backup values
     const payload = {
       ...assertionResponse,
       credential: assertionResponse,
@@ -154,24 +141,20 @@ export const sendLoginResponse = async (assertionResponse) => {
     });
     
     try {
-      // Normal login flow
       console.log('Sending login response to server...');
       const response = await api.post('/auth/login/response', payload);
       console.log('Login successful! Server response:', response.data);
       
-      // Explicitly store auth status in sessionStorage as backup
       if (response.data.user) {
         sessionStorage.setItem('authenticatedUser', JSON.stringify(response.data.user));
       }
       
-      // Remove temporary challenge backup
       localStorage.removeItem('login_challenge_backup');
       
       return response.data;
     } catch (loginError) {
       console.warn('Standard login failed, trying with error bypass:', loginError.message);
       
-      // If normal login fails and we have a placeholder key in use, try a simplified login
       const directLoginResponse = await api.post('/auth/login-direct', {
         username: localStorage.getItem('temp_username'),
         credentialId: payload.id || payload.rawId
@@ -187,7 +170,6 @@ export const sendLoginResponse = async (assertionResponse) => {
       status: error.response?.status
     });
     
-    // Enhanced error handling
     let errorMessage = 'Login failed: ';
     if (error.response?.data?.error) {
       errorMessage += error.response.data.error;
@@ -203,13 +185,11 @@ export const sendLoginResponse = async (assertionResponse) => {
   }
 };
 
-// Improved direct login function that fully authenticates the user
 export const loginDirect = async (username) => {
   try {
     console.log('Attempting direct login for:', username);
     const response = await api.post('/auth/login-direct', { username });
     
-    // Store authenticated user in session storage if login was successful
     if (response.data.user && (response.data.authenticated || response.data.status === 'ok')) {
       console.log('Storing authenticated user in session storage:', response.data.user);
       sessionStorage.setItem('authenticatedUser', JSON.stringify(response.data.user));
@@ -223,7 +203,7 @@ export const loginDirect = async (username) => {
   }
 };
 
-// Add a way to check if a user has credentials
+// CHECK USER CREDENTIAL
 export const checkUserCredentials = async (username) => {
   try {
     const response = await api.get(`/auth/debug/user-credentials/${encodeURIComponent(username)}`);
@@ -234,7 +214,7 @@ export const checkUserCredentials = async (username) => {
   }
 };
 
-// Logout service
+// LOGOUT SERVICE
 export const logoutUser = async () => {
   try {
     const response = await api.post('/auth/logout');
@@ -245,7 +225,7 @@ export const logoutUser = async () => {
   }
 };
 
-// Verify if user session is still valid
+// VERIFY USER SESSION
 export const verifySession = async () => {
   try {
     const response = await api.get('/auth/verify-session');
@@ -256,29 +236,26 @@ export const verifySession = async () => {
   }
 };
 
-// Helper function to get the correct RP ID from environment variables or fallback to hostname
+// HELPER FUNCTION TO GET THE RIGHT RP ID
 const getRpId = () => {
-  // First check if RP_ID is defined in environment variables
   const envRpId = import.meta.env.VITE_RP_ID;
   
-  // If environment variable exists, use it
   if (envRpId) {
     return envRpId;
   }
   
-  // Otherwise fallback to hostname
   const hostname = window.location.hostname;
   return hostname === 'localhost' ? 'localhost' : hostname;
 };
 
-// WebAuthn credential helpers
+// WEBAUTHN CREDENTIAL HELPERS
 export const createCredential = async (credentialOptions) => {
   try {
-    // Convert challenge and user ID to ArrayBuffer
+    // CONVERT CHALLENGE AND USER ID TO ARRAYBUFFER
     credentialOptions.challenge = base64URLToBuffer(credentialOptions.challenge);
     credentialOptions.user.id = base64URLToBuffer(credentialOptions.user.id);
     
-    // Get the RP ID from environment or hostname
+    // GET THE RP IF FROM ENVIROMENT OR HOSTNAME 
     const rpId = getRpId();
     
     console.log('Creating credential with options:', JSON.stringify({
@@ -287,7 +264,7 @@ export const createCredential = async (credentialOptions) => {
       user: { ...credentialOptions.user, id: 'ArrayBuffer (converted)' }
     }, null, 2));
     
-    // Create credentials with explicit parameters
+    // CREATE CREDENTIALS WITH EXPLICIT PAREMETERS
     const credential = await navigator.credentials.create({ 
       publicKey: {
         ...credentialOptions,
@@ -298,7 +275,7 @@ export const createCredential = async (credentialOptions) => {
       }
     });
     
-    // Format credential for transmission
+    // FORMAT CREDENTIALS FOR TRANSMISSION
     return {
       id: arrayBufferToBase64URL(credential.rawId),
       rawId: arrayBufferToBase64URL(credential.rawId),
@@ -322,11 +299,10 @@ export const getCredential = async (assertionOptions) => {
       allowCredentials: assertionOptions.allowCredentials?.length || 0
     });
     
-    // Ensure challenge is a string before conversion
+    // ENSURE CHALLENGE IS A STRING BEFORE CONVERSION 
     const challenge = assertionOptions.challenge.toString();
     assertionOptions.challenge = base64URLToBuffer(challenge);
     
-    // Convert allowed credentials to ArrayBuffer if they exist
     if (assertionOptions.allowCredentials) {
       assertionOptions.allowCredentials = assertionOptions.allowCredentials.map(credential => ({
         id: base64URLToBuffer(credential.id.toString()),
@@ -335,15 +311,12 @@ export const getCredential = async (assertionOptions) => {
       }));
     }
 
-    // Get the RP ID from environment or hostname
     const rpId = getRpId();
     
-    // Ensure rpId is set correctly
     assertionOptions.rpId = rpId;
     
     console.log('Calling navigator.credentials.get()...');
     
-    // Get credential from authenticator with improved error handling
     try {
       const credential = await navigator.credentials.get({
         publicKey: assertionOptions,
@@ -356,7 +329,6 @@ export const getCredential = async (assertionOptions) => {
         throw new Error('No credential returned from authenticator');
       }
 
-      // Format credential for transmission
       return {
         id: arrayBufferToBase64URL(credential.rawId),
         rawId: arrayBufferToBase64URL(credential.rawId),
@@ -370,7 +342,6 @@ export const getCredential = async (assertionOptions) => {
     } catch (webAuthnError) {
       console.error('WebAuthn API error:', webAuthnError);
       
-      // Provide more user-friendly error messages based on the error
       if (webAuthnError.name === 'NotAllowedError') {
         throw new Error('Authentication was rejected by the user or device');
       } else if (webAuthnError.name === 'SecurityError') {

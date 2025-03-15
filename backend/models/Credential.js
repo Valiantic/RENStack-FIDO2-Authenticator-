@@ -2,7 +2,7 @@ const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 const User = require('./User');
 
-const Credential = sequelize.define('credential', {
+const Credential = sequelize.define('Credential', {
   credentialId: {
     type: DataTypes.STRING(512),
     allowNull: false,
@@ -19,7 +19,7 @@ const Credential = sequelize.define('credential', {
   tableName: 'Credentials',
 });
 
-// Define associations
+// DEFINE ASSOCIATIONS OR FOREIGN KEY 
 User.hasMany(Credential, { foreignKey: 'userId' });
 Credential.belongsTo(User, { foreignKey: 'userId' });
 

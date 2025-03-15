@@ -1,8 +1,8 @@
 /**
  * Debugging utilities to help troubleshoot authentication issues
- */
+*/
 
-// Debug current auth state
+// DEBUG CURRENT AUTH STATE
 export function checkCurrentAuthState() {
   const authData = {
     sessionStorage: null,
@@ -14,7 +14,7 @@ export function checkCurrentAuthState() {
     timestamp: new Date().toISOString()
   };
   
-  // Try to get and parse session storage
+  // TRY TO GET USER DATA FROM SESSION STORAGE
   try {
     const storedUser = sessionStorage.getItem('authenticatedUser');
     if (storedUser) {
@@ -34,7 +34,7 @@ export function checkCurrentAuthState() {
   return authData;
 }
 
-// Debug auth navigation
+// DEBUG AUTH NAVIGATION 
 export function debugNavigation(from, to, data = {}) {
   console.log(`AUTH NAVIGATION: ${from} → ${to}`, {
     ...data,

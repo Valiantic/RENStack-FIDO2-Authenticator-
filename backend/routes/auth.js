@@ -1,12 +1,14 @@
+
+// INITIALIZATION
 const express = require('express');
 const { Fido2Lib } = require('fido2-lib');
 const router = express.Router();
 const User = require('../models/User');
 const Credential = require('../models/Credential');
 const crypto = require('crypto');
-const sequelize = require('../config/database'); // Add this import for database access
+const sequelize = require('../config/database');
 
-// Configure fido2-lib using environment variables where needed
+// FIDO2 LIBRARY CONFIGURATION 
 const fido2 = new Fido2Lib({
   timeout: 60000,
   rpId: process.env.RP_ID,
@@ -15,14 +17,14 @@ const fido2 = new Fido2Lib({
   attestation: 'none',
 });
 
-// Helper to convert ArrayBuffer to base64url
+// HELPER CONVERTION FOR ARRAYBUFFER TO BASE64URL
 const bufferToBase64url = (buffer) =>
   Buffer.from(buffer).toString('base64')
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/, '');
 
-// Helper function to convert base64URL to buffer
+// HELPER CONVERTION FOR BASE64URL TO ARRAYBUFFER
 const base64URLToBuffer = (base64URL) => {
   const base64 = base64URL.replace(/-/g, '+').replace(/_/g, '/');
   const padLen = (4 - (base64.length % 4)) % 4;
@@ -30,21 +32,20 @@ const base64URLToBuffer = (base64URL) => {
   return Buffer.from(padded, 'base64');
 };
 
-// Helper function to get and validate the origin
+// HELPER FUNCTION TO GET AND VALIDATE ORIGIN 
 const getOrigin = () => {
-  // Use FRONTEND_PORT from environment if available
+
+  // FRONTEND_PORT from environment
   const frontendPort = process.env.FRONTEND_PORT;
   const frontendHost = process.env.FRONTEND_HOST;
   const protocol = process.env.FRONTEND_PROTOCOL;
   
-  // Use full ORIGIN if provided, otherwise construct from components
   const origin = process.env.ORIGIN || `${protocol}://${frontendHost}:${frontendPort}`;
   
-  // Ensure the origin is properly formatted (no trailing slash)
   return origin.replace(/\/$/, '');
 };
 
-// Helper function to get rpId from origin or env
+// HELPER FUNCTION TO GET rpId FROM ORIGIN OR ENV
 const getRpId = () => {
   if (process.env.RP_ID) return process.env.RP_ID;
   try {
@@ -57,7 +58,7 @@ const getRpId = () => {
   }
 };
 
-// Add method check middleware
+// METHOD CHECK MIDDLEWARE
 const methodCheck = (req, res, next) => {
   if (req.method !== 'POST') {
     return res.status(405).json({ 
@@ -68,7 +69,7 @@ const methodCheck = (req, res, next) => {
   next();
 };
 
-// New function to reliably save session
+// FUNCTION TO SAVE SESSION
 const saveSession = async (req) => {
   if (!req.session) {
     throw new Error('Session not available');
@@ -86,7 +87,7 @@ const saveSession = async (req) => {
   });
 };
 
-// Helper to store challenge securely
+// HELPER TO STORE CHALLENGE BEFORE REGISTRATION OR LOGIN
 const storeChallenge = async (req, challenge, username = null) => {
   if (!req.session) {
     throw new Error('Session not available');
@@ -98,7 +99,7 @@ const storeChallenge = async (req, challenge, username = null) => {
   
   await saveSession(req);
   
-  // Log session state after storing
+  // LOG SESSION AFTER STORING
   console.log(`Challenge stored in session ${req.sessionID}:`, {
     challenge: challenge.substring(0, 10) + '...',
     username: req.session.username,
@@ -106,9 +107,9 @@ const storeChallenge = async (req, challenge, username = null) => {
   });
 };
 
-// ---------- Registration ----------
+// ---------- REGISTRATION  ----------
 
-//  Initiate Registration: send options (challenge, etc.)
+
 router.post('/register', async (req, res) => {
   try {
     const { username, displayName } = req.body;
@@ -116,7 +117,6 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Missing username or displayName' });
     }
 
-    // Check if username already exists
     const existingUser = await User.findOne({ where: { username } });
     if (existingUser) {
       return res.status(400).json({ error: 'Username already exists' });
@@ -124,23 +124,21 @@ router.post('/register', async (req, res) => {
 
     console.log('Generating registration options for:', username);
 
-    // Generate registration options
     const registrationOptions = await fido2.attestationOptions();
 
-    // Convert challenge to base64url
+    // CONVERT CHALLENGE TO BASE64URL
     registrationOptions.challenge = bufferToBase64url(registrationOptions.challenge);
 
-    // Customize options with user info
     registrationOptions.user = {
       id: crypto.randomBytes(32),
       name: username,
       displayName: displayName
     };
 
-    // Convert user id to base64url
+    // CONVERT USER ID TO BASE64URL
     registrationOptions.user.id = bufferToBase64url(registrationOptions.user.id);
 
-    // Add rp configuration with validated rpId
+    // ADD RP CONFIGURATION WITH VALIDATED RP ID
     const rpId = getRpId();
     registrationOptions.rp = {
       name: process.env.RP_NAME || 'FIDO2 Demo',
@@ -149,12 +147,11 @@ router.post('/register', async (req, res) => {
 
     console.log(`Using RP ID: ${rpId}`);
 
-    // Store challenge using our helper function
+    // STORE CHALLENGE USING HELPER FUNCTION
     await storeChallenge(req, registrationOptions.challenge, username);
     req.session.displayName = displayName;
     await saveSession(req);
 
-    // Important client-side debugging info
     console.log(`Registration options sent to client. SessionID: ${req.sessionID}`);
 
     res.json({
@@ -177,7 +174,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// New endpoint to store the challenge in the session
+// ENDPOINT TO STORE CHALLENGE 
 router.post('/store-challenge', async (req, res) => {
   try {
     const { challenge, sessionId } = req.body;
@@ -185,10 +182,10 @@ router.post('/store-challenge', async (req, res) => {
       return res.status(400).json({ error: 'Missing challenge' });
     }
 
-    // Store challenge in session
+    // STORE CHALLENGE IN SESSION 
     req.session.challenge = challenge;
     
-    // Force save session
+    // FORCE SAVE SESSION 
     await new Promise((resolve, reject) => {
       req.session.save(err => {
         if (err) {
@@ -216,7 +213,7 @@ router.post('/store-challenge', async (req, res) => {
   }
 });
 
-//  Complete Registration: verify attestation response
+//  COMPLETE REGISTRATION 
 router.post('/register/response', methodCheck, async (req, res) => {
   try {
     console.log('Received registration response');
@@ -227,10 +224,9 @@ router.post('/register/response', methodCheck, async (req, res) => {
 
     const { rawId, type, response } = req.body;
 
-    // Create the attestation response with proper ArrayBuffer format
     const attestationResponse = {
       rawId: Uint8Array.from(base64URLToBuffer(rawId)).buffer,
-      id: rawId, // Use rawId as the id
+      id: rawId, 
       response: {
         attestationObject: Uint8Array.from(base64URLToBuffer(response.attestationObject)).buffer,
         clientDataJSON: Uint8Array.from(base64URLToBuffer(response.clientDataJSON)).buffer
@@ -239,7 +235,7 @@ router.post('/register/response', methodCheck, async (req, res) => {
       getClientExtensionResults: () => ({})
     };
 
-    // Get properly formatted origin and rpId
+    // FORMAT RP ID AND ORIGIN 
     const origin = getOrigin();
     const rpId = getRpId();
 
@@ -259,7 +255,6 @@ router.post('/register/response', methodCheck, async (req, res) => {
       }
     );
 
-    // Save user and credential
     const username = req.session.username;
     const displayName = req.session.displayName;
 
@@ -271,19 +266,18 @@ router.post('/register/response', methodCheck, async (req, res) => {
       });
     }
 
-    // Create credential record - Fix: use rawId instead of undefined id
+    // CREATE CREDENTIAL RECORD USE RAW ID INSTEAD OF UNDEFINED ID
     const credential = await Credential.create({
       userId: user.id,
-      credentialId: rawId, // Changed from id to rawId
+      credentialId: rawId, 
       publicKey: attestationResult.authnrData.get('credentialPublicKeyPem'),
       counter: attestationResult.authnrData.get('counter') || 0
     });
 
     // SESSION SAVING
-    // Clear challenge from session but keep username and mark as authenticated
+   
     req.session.challenge = null;
-    req.session.authenticated = true;  // Add this line to set authentication status
-    // Keep username in session for persistence
+    req.session.authenticated = true;  
     await req.session.save();
 
     res.json({ 
@@ -305,7 +299,6 @@ router.post('/register/response', methodCheck, async (req, res) => {
   }
 });
 
-// Simple direct registration endpoint that avoids transaction issues
 router.post('/register-direct', async (req, res) => {
   try {
     console.log('==== DIRECT REGISTRATION ENDPOINT CALLED ====');
@@ -319,7 +312,6 @@ router.post('/register-direct', async (req, res) => {
       });
     }
     
-    // Use rawId from body directly
     const credentialId = rawId || req.body.credential?.rawId || req.body.credential?.id || req.body.id;
     
     if (!credentialId) {
@@ -333,7 +325,7 @@ router.post('/register-direct', async (req, res) => {
     console.log(`Creating/finding user: "${username}" with credential ID: "${credentialId.substring(0,10)}..."`);
     
     try {
-      // Create or find the user
+  
       let user = await User.findOne({ where: { username } });
       if (!user) {
         user = await User.create({
@@ -345,18 +337,17 @@ router.post('/register-direct', async (req, res) => {
         console.log('Found existing user:', user.id);
       }
       
-      // Create credential record
+   
       console.log('Creating credential record for user:', user.id);
       const credential = await Credential.create({
         userId: user.id,
         credentialId: credentialId,
-        publicKey: "PLACEHOLDER_KEY", // Simple placeholder for direct registration
+        publicKey: "PLACEHOLDER_KEY", 
         counter: 0
       });
       
       console.log('Credential created with ID:', credential.id);
       
-      // Set session
       req.session.authenticated = true;
       req.session.username = username;
       req.session.challenge = null;
@@ -386,7 +377,7 @@ router.post('/register-direct', async (req, res) => {
   }
 });
 
-// Add logout route
+// LOGOUT ROUTE 
 router.post('/logout', (req, res) => {
   req.session.destroy((err) => {
     if (err) {
@@ -396,9 +387,9 @@ router.post('/logout', (req, res) => {
   });
 });
 
-// ---------- Authentication (Login) ----------
+// ---------- LOGIN ----------
 
-// Initiate Login: generate assertion options
+// INITIAL LOGIN 
 router.post('/login', async (req, res) => {
   try {
     const { username } = req.body;
@@ -406,7 +397,6 @@ router.post('/login', async (req, res) => {
     
     console.log(`[DEBUG] Login attempt for username: "${username}"`);
     
-    // First check if the user exists at all
     const userExists = await User.findOne({ where: { username } });
     if (!userExists) {
       console.log(`[DEBUG] User not found: "${username}"`);
@@ -415,9 +405,9 @@ router.post('/login', async (req, res) => {
     
     console.log(`[DEBUG] User found with ID: ${userExists.id}`);
     
-    // Then separately check for credentials
+  
     try {
-      // Force a direct query to ensure credentials are loaded
+    
       const credentials = await Credential.findAll({ 
         where: { userId: userExists.id }
       });
@@ -436,28 +426,26 @@ router.post('/login', async (req, res) => {
         });
       }
       
-      // Log credential details to help debug
       credentials.forEach((cred, idx) => {
         console.log(`[DEBUG] Credential ${idx+1}: ID=${cred.id}, credentialId=${cred.credentialId.substring(0, 10)}..., userId=${cred.userId}`);
       });
       
-      // Generate assertion options
+      // GENERATE ASSERTION OPTIONS
       const assertionOptions = await fido2.assertionOptions();
       
-      // Convert challenge to base64url string
+      // CONVERT CHALLENGE TO BASE64URL
       assertionOptions.challenge = bufferToBase64url(assertionOptions.challenge);
       
-      // Format credential IDs
+      // FORMAT CREDENTIAL IDS
       assertionOptions.allowCredentials = credentials.map(cred => ({
         id: cred.credentialId,
         type: 'public-key',
         transports: ['internal', 'hybrid', 'usb']
       }));
       
-      // Store challenge and username using our helper
+      // STORE CHALLENGE ON USERNAME IN SESSION
       await storeChallenge(req, assertionOptions.challenge, username);
       
-      // Log full session state for debugging
       console.log('[DEBUG] Full session after storing challenge:', {
         id: req.sessionID,
         challenge: assertionOptions.challenge.substring(0, 10) + '...',
@@ -491,7 +479,6 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Direct login - modified to provide full authentication for simpler flow
 router.post('/login-direct', async (req, res) => {
   try {
     const { username } = req.body;
@@ -501,7 +488,7 @@ router.post('/login-direct', async (req, res) => {
     
     console.log(`Direct login attempt for username: "${username}"`);
     
-    // Find the user
+  
     const user = await User.findOne({ where: { username }, include: Credential });
     
     if (!user) {
@@ -512,17 +499,14 @@ router.post('/login-direct', async (req, res) => {
       });
     }
     
-    // Check if user has credentials
     const hasCredentials = user.Credentials && user.Credentials.length > 0;
     
     console.log(`Found user: ${username} (ID: ${user.id}), has credentials: ${hasCredentials}`);
     
-    // Set session as authenticated for simplified direct login
     req.session.authenticated = true;
     req.session.username = username;
     req.session.userId = user.id;
     
-    // Explicitly save session
     await new Promise((resolve, reject) => {
       req.session.save(err => {
         if (err) reject(err);
@@ -554,17 +538,14 @@ router.post('/login-direct', async (req, res) => {
   }
 });
 
-//  Complete Login: verify assertion response
 router.post('/login/response', methodCheck, async (req, res) => {
   try {
     console.log('Login response received:', req.body);
     const { id, rawId, type, response, _challengeBackup } = req.body;
 
-    // Get challenge from session or fallback to client-provided backup
     let challenge = req.session?.challenge;
     let username = req.session?.username;
     
-    // Check for client-provided backup values if session values are missing
     if (!challenge && _challengeBackup) {
       console.log('[DEBUG] Using client-provided challenge backup');
       challenge = _challengeBackup;
@@ -583,7 +564,6 @@ router.post('/login/response', methodCheck, async (req, res) => {
       throw new Error('No username found in session or request');
     }
 
-    // Get user and credential
     const user = await User.findOne({
       where: { username },
       include: [{ model: Credential }]
@@ -595,7 +575,6 @@ router.post('/login/response', methodCheck, async (req, res) => {
 
     const credential = user.Credentials[0];
 
-    // Create assertion response object with proper Buffer conversions
     const assertionResponse = {
       id: rawId,
       rawId: Uint8Array.from(base64URLToBuffer(rawId)).buffer,
@@ -607,7 +586,6 @@ router.post('/login/response', methodCheck, async (req, res) => {
       type: type
     };
 
-    // Get properly formatted origin and rpId
     const origin = getOrigin();
     const rpId = getRpId();
 
@@ -628,23 +606,22 @@ router.post('/login/response', methodCheck, async (req, res) => {
       userVerification: "preferred"
     });
 
-    // Update counter
+    // UPDATE COUNTER 
     await credential.update({ counter: result.authnrData.get('counter') });
 
-    // Clear session challenge and ensure authenticated is set
+    // CLEAR SESSION CHALLENGE
     req.session.challenge = null;
     req.session.authenticated = true; 
-    req.session.userId = user.id; // Add user ID to session
-    req.session.username = username; // Ensure username is in session
+    req.session.userId = user.id; 
+    req.session.username = username; 
     req.session.lastLogin = new Date().toISOString();
-    req.session.challenge = null; // Clear challenge
+    req.session.challenge = null; 
 
     try {
       await saveSession(req);
       console.log('[DEBUG] Session successfully saved after authentication');
     } catch (saveError) {
       console.error('[ERROR] Failed to save session after successful auth:', saveError);
-      // Continue anyway as we'll handle it client-side too
     }
 
     console.log('Session after authentication:', {
@@ -681,7 +658,7 @@ router.post('/login/response', methodCheck, async (req, res) => {
 
 // SESSION SAVING
 
-// Improved session verification endpoint
+// IMPROVED SESSION SAVING 
 router.get('/verify-session', async (req, res) => {
   try {
     console.log('[DEBUG] Verify session request received');
@@ -693,9 +670,8 @@ router.get('/verify-session', async (req, res) => {
       hasSession: !!req.session
     });
     
-    // Check if session exists and is authenticated
+   
     if (req.session && req.session.authenticated && req.session.username) {
-      // Get user info from database
       const user = await User.findOne({
         where: { username: req.session.username }
       });
@@ -703,7 +679,7 @@ router.get('/verify-session', async (req, res) => {
       if (user) {
         console.log(`[DEBUG] User ${user.username} is authenticated`);
         
-        // Force session resave to extend expiration
+
         req.session.lastVerified = new Date().toISOString();
         await new Promise((resolve, reject) => {
           req.session.save(err => {
@@ -736,7 +712,7 @@ router.get('/verify-session', async (req, res) => {
       console.log('[DEBUG] No valid session found');
     }
     
-    // If no valid session or user not found
+    // IF NO SESSION OR USER FOUND
     res.json({
       status: 'ok',
       authenticated: false,
@@ -752,12 +728,11 @@ router.get('/verify-session', async (req, res) => {
   }
 });
 
-// Add a diagnostic endpoint for debugging credential issues
+
 router.get('/debug/user-credentials/:username', async (req, res) => {
   try {
     const { username } = req.params;
-    
-    // Find user
+  
     const user = await User.findOne({ where: { username } });
     
     if (!user) {
@@ -768,7 +743,6 @@ router.get('/debug/user-credentials/:username', async (req, res) => {
       });
     }
     
-    // Find credentials separately
     const credentials = await Credential.findAll({ where: { userId: user.id } });
     
     res.json({
@@ -797,7 +771,6 @@ router.get('/debug/user-credentials/:username', async (req, res) => {
   }
 });
 
-// Add a session diagnostics endpoint
 router.get('/debug/session-info', (req, res) => {
   const sessionInfo = {
     id: req.sessionID,

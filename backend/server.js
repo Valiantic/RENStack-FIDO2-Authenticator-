@@ -1,4 +1,6 @@
-require('dotenv').config(); // Load env variables early
+// INITIALIZED DEPENDECIES
+
+require('dotenv').config(); 
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -8,35 +10,34 @@ const authRoutes = require('./routes/auth');
 
 const app = express();
 
-// Helper function to get clean origin
+//  HELPER FUNCTION TO CLEAR ORIGINS 
 const getCleanOrigin = () => {
-  // Use FRONTEND_PORT from environment if available
+  // USE FRONTEND_PORT FROM ENV
   const frontendPort = process.env.FRONTEND_PORT;
   const frontendHost = process.env.FRONTEND_HOST;
   const protocol = process.env.FRONTEND_PROTOCOL;
   
-  // Use full ORIGIN if provided, otherwise construct from components
+  // USE ORIGIN 
   const origin = process.env.ORIGIN || `${protocol}://${frontendHost}:${frontendPort}`;
   
-  // Remove trailing slash if present
   return origin.replace(/\/$/, '');
 };
 
-// Basic middleware
+// MIDDLEWARE
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Get origins for CORS configuration
+// ALLOWED ORIGINS
 const allowedOrigins = [
   getCleanOrigin(),
   'https://renstack-fido2-authenticator.onrender.com',
   process.env.ADDITIONAL_ORIGIN,
-].filter(Boolean); // Filter out any undefined/null/empty values
+].filter(Boolean); 
 
-// Configure CORS before other middleware
+// CORS CONFIGURATION BEFORE MIDDLEWARE
 app.use(cors({
     origin: function(origin, callback) {
-      // Allow requests with no origin (like mobile apps, curl, etc)
+     
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
@@ -48,31 +49,30 @@ app.use(cors({
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Accept', 'X-Session-ID'],
     exposedHeaders: ['Set-Cookie'],
-    maxAge: 600 // Reduce preflight requests
+    maxAge: 600 
 }));
 
-// Log the CORS and RP settings on startup
-console.log('======= WebAuthn Configuration =======');
+// LOG CORS CONFIGURATION UPON START 
+console.log('======= BackEnd now Running =======');
 console.log(`Origins: ${allowedOrigins.join(', ')}`);
 console.log(`RP ID: ${process.env.RP_ID}`);
 console.log(`RP Name: ${process.env.RP_NAME}`);
 console.log('====================================');
 
-// Helmet configuration
+// HELMET CONFIGURATION 
 app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
     crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }
 }));
 
-// Enhanced session configuration for cross-domain support with longer expiration
 const sessionConfig = {
     secret: process.env.SESSION_SECRET || 'fallback-secret-for-development-only',
     resave: false,
     saveUninitialized: false,
     name: 'fido2session',
     cookie: {
-        // CRITICAL FIX: Increase session timeout to 7 days
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days instead of 1 day
+        // INCREASE SESSION FROM 1 DAY TO 7 DAYS
+        maxAge: 7 * 24 * 60 * 60 * 1000, 
         secure: process.env.NODE_ENV === 'production',
         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         httpOnly: true,
@@ -80,27 +80,23 @@ const sessionConfig = {
     }
 };
 
-// Important: Add this before using session middleware
-// Memory store is not suitable for production - warning and fallback
+
 if (process.env.NODE_ENV === 'production') {
     console.warn('WARNING: Using default memory store for sessions. This is not suitable for production.');
     console.warn('Consider using a persistent session store like connect-redis or connect-mongo');
 }
 
-// Add domain to cookie in production
 if (process.env.NODE_ENV === 'production' && process.env.COOKIE_DOMAIN) {
     sessionConfig.cookie.domain = process.env.COOKIE_DOMAIN;
 }
 
-// Use session middleware with enhanced config
+// ENABLE SESSION MIDDLEWARE
 app.use(session(sessionConfig));
 
-// Enhanced session save mechanism to ensure reliability
 app.use((req, res, next) => {
     const originalEnd = res.end;
     const originalJson = res.json;
     
-    // Override res.end to ensure session is saved before responding
     res.end = function() {
         if (req.session && req.session.save) {
             try {
@@ -119,7 +115,6 @@ app.use((req, res, next) => {
         }
     };
     
-    // Also override res.json for better session handling
     res.json = function(data) {
         if (req.session && req.session.save) {
             try {
@@ -141,11 +136,10 @@ app.use((req, res, next) => {
     next();
 });
 
-// Add explicit session save middleware
+//  SESSION SAVE ON MIDDLEWARE
 app.use((req, res, next) => {
     const oldEnd = res.end;
-    
-    // Override res.end to ensure session is saved before responding
+   
     res.end = function() {
         if (req.session && req.session.save) {
             req.session.save(err => {
@@ -162,9 +156,8 @@ app.use((req, res, next) => {
     next();
 });
 
-// Session tracking middleware
+// SESSION TRACKING MIDDLEWARE 
 app.use((req, res, next) => {
-    // Generate a session ID for tracking if needed
     if (!req.session) {
         console.error('Session middleware not initialized properly');
         return next(new Error('Session middleware failure'));
@@ -176,7 +169,6 @@ app.use((req, res, next) => {
         console.log(`Initialized new session: ${req.sessionID}`);
     }
     
-    // Track custom session ID from header if present
     const customSessionId = req.headers['x-session-id'];
     if (customSessionId) {
         req.session.customSessionId = customSessionId;
@@ -186,7 +178,6 @@ app.use((req, res, next) => {
     next();
 });
 
-// Enhanced logging middleware
 app.use((req, res, next) => {
     console.log(`\n[${new Date().toISOString()}] ${req.method} ${req.url}`);
     console.log('Headers:', JSON.stringify(req.headers, null, 2));
@@ -199,13 +190,10 @@ app.use((req, res, next) => {
     next();
 });
 
-// Add OPTIONS handling
 app.options('*', cors());
 
-// Add explicit verification for route mounting
 console.log('=== Mounting Routes ===');
 
-// Add debug middleware specifically for registration endpoints
 app.use('/auth/register*', (req, res, next) => {
   console.log('\n==== REGISTRATION REQUEST DETAILS ====');
   console.log(`Path: ${req.path}`);
@@ -219,11 +207,9 @@ app.use('/auth/register*', (req, res, next) => {
   next();
 });
 
-// Mount routes
 app.use('/auth', authRoutes);
 console.log('Auth routes mounted at /auth');
 
-// Additional route to verify the auth router is properly mounted
 app.get('/check-auth-routes', (req, res) => {
   res.json({
     status: 'ok',
@@ -238,7 +224,6 @@ app.get('/check-auth-routes', (req, res) => {
   });
 });
 
-// Add a simple redirect for login GET requests to help users
 app.get('/auth/login', (req, res) => {
   res.status(405).json({
     error: 'Method not allowed',
@@ -247,7 +232,6 @@ app.get('/auth/login', (req, res) => {
   });
 });
 
-// Add diagnostic routes for database connection
 app.get('/db-status', async (req, res) => {
   try {
     await sequelize.authenticate();
@@ -270,7 +254,6 @@ app.get('/db-status', async (req, res) => {
   }
 });
 
-// Add a user diagnostic endpoint to check credentials
 app.get('/check-user', async (req, res) => {
   try {
     const { username } = req.query;
@@ -307,12 +290,10 @@ app.get('/check-user', async (req, res) => {
   }
 });
 
-// Basic test route
 app.get('/', (req, res) => {
     res.send('FIDO2 Authenticator Server is running.');
 });
 
-// Session test route
 app.get('/session-check', (req, res) => {
     res.json({ 
         sessionId: req.sessionID, 
@@ -320,7 +301,6 @@ app.get('/session-check', (req, res) => {
     });
 });
 
-// Updated error handling middleware
 app.use((err, req, res, next) => {
     console.error('Error:', err);
     res.status(500).json({ 
@@ -330,11 +310,9 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Add a route to check if other routes exist
 app.get('/check-route/:path(*)', (req, res) => {
   const routePath = '/' + req.params.path;
   
-  // Check if route exists in Express router
   const routeExists = app._router.stack.some(r => {
     if (r.route && r.route.path) {
       return r.route.path === routePath;
@@ -349,9 +327,8 @@ app.get('/check-route/:path(*)', (req, res) => {
   });
 });
 
-// This should be the LAST route defined
 app.get('*', (req, res, next) => {
-    // Skip API routes and known endpoints
+  
     if (req.url.startsWith('/auth/') || 
         req.url.startsWith('/api/') || 
         req.url === '/session-check' ||
@@ -368,7 +345,6 @@ app.get('*', (req, res, next) => {
     });
 });
 
-// Sync models and start server
 sequelize.sync().then(() => {
   const BACKEND_PORT = process.env.BACKEND_PORT || process.env.PORT || 3001;
   app.listen(BACKEND_PORT, () => {

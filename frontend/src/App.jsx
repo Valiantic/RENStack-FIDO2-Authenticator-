@@ -5,13 +5,12 @@ import Login from './components/Login';
 import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 
-// Fixed ProtectedRoute with proper hook usage
+// FIXED PROTETED ROUTE
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading, currentUser, checkSessionValidity } = useAuth();
   const navigate = useNavigate();
   const [localLoading, setLocalLoading] = useState(true);
   
-  // Check auth state from sessionStorage
   const checkSessionStorage = useCallback(() => {
     try {
       const storedUser = sessionStorage.getItem('authenticatedUser');
@@ -25,10 +24,8 @@ const ProtectedRoute = ({ children }) => {
     return false;
   }, []);
   
-  // First effect to handle initial auth check from local storage only
   useEffect(() => {
     if (!loading) {
-      // CRITICAL: First check is only from local sources (no server check)
       const isLocallyAuthenticated = isAuthenticated || checkSessionStorage();
       
       if (!isLocallyAuthenticated) {
@@ -41,15 +38,13 @@ const ProtectedRoute = ({ children }) => {
     }
   }, [loading, isAuthenticated, navigate, checkSessionStorage]);
   
-  // Second effect to verify with server AFTER a delay (don't redirect on failure)
+
   useEffect(() => {
     if (!loading && !localLoading && isAuthenticated) {
-      // Give the server time to establish the session before checking
       const serverCheckTimer = setTimeout(() => {
-        // FIXED: Don't call useAuth() inside useEffect callback - use the one from component scope
+
         checkSessionValidity().catch(err => {
           console.warn('Server verification error (non-blocking):', err);
-          // IMPORTANT: Don't redirect on verification failure
         });
       }, 1000); // 1 second delay before server check
       
@@ -57,22 +52,20 @@ const ProtectedRoute = ({ children }) => {
     }
   }, [loading, localLoading, isAuthenticated, checkSessionValidity]);
   
-  // Show loading indicator while checking auth
   if (loading || localLoading) {
     return <div className="flex justify-center items-center h-screen">
-      <div className="text-xl">Loading dashboard...</div>
+      <div className="text-xl">Loading Dashboard...</div>
     </div>;
   }
   
   return children;
 };
 
-// PublicRoute component (simplified to prevent false redirects)
+// PublicRoute COMPONENT TO PREVENT REDIRECTING
 const PublicRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
   
-  // Check for authentication in BOTH context and session storage
   const hasStoredAuth = () => {
     try {
       return !!sessionStorage.getItem('authenticatedUser');
@@ -81,7 +74,6 @@ const PublicRoute = ({ children }) => {
     }
   };
   
-  // Effect to handle redirect to dashboard if authenticated
   useEffect(() => {
     if (!loading) {
       if (isAuthenticated || hasStoredAuth()) {
@@ -91,7 +83,6 @@ const PublicRoute = ({ children }) => {
     }
   }, [isAuthenticated, loading, navigate]);
   
-  // Always render children - the effect will handle redirection
   return children;
 };
 
@@ -100,7 +91,7 @@ function AppRoutes() {
   
   if (loading) {
     return <div className="flex h-screen items-center justify-center">
-      <div className="text-xl text-blue-600 font-semibold">Loading...</div>
+      <div className="text-xl text-blue-600 font-semibold">Hang in there...</div>
     </div>;
   }
   

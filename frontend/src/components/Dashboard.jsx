@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { verifySession, logoutUser } from '../services/authService';
-import { checkCurrentAuthState } from '../utils/authDebugger'; // Import the debug helper
+import { checkCurrentAuthState } from '../utils/authDebugger'; 
 
 const Dashboard = () => {
   const { currentUser, logout, checkSessionValidity, forceDashboardNavigation } = useAuth();
@@ -10,22 +10,20 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [localUser, setLocalUser] = useState(null);
   
-  // Effect to ensure we have user data
+  // ENSURE CORRECT AUTH STATE
   useEffect(() => {
     console.log('Dashboard mounted');
     
-    // First clear the auth-in-progress flag if it exists
     localStorage.removeItem('authInProgress');
     
-    // Function to get user data from various sources
+    // FUNCTION GET USER DATA 
     const getUserData = () => {
-      // First try context
+     
       if (currentUser) {
         console.log('Dashboard: Using user data from context');
         return currentUser;
       }
       
-      // Then try session storage
       try {
         const storedUser = sessionStorage.getItem('authenticatedUser');
         if (storedUser) {
@@ -40,15 +38,13 @@ const Dashboard = () => {
       return null;
     };
     
-    // Get user data
     const userData = getUserData();
     
     if (userData) {
-      // CRITICAL FIX: Store user data in component state to prevent flickering
+      // STORE USER DATA ON LOCAL STATE 
       setLocalUser(userData);
       setLoading(false);
       
-      // Verify session in background with error handling, don't redirect on failure
       setTimeout(() => {
         checkSessionValidity().catch(err => {
           console.warn('Background session check failed, maintaining dashboard view:', err);
@@ -60,28 +56,22 @@ const Dashboard = () => {
     }
   }, [currentUser, checkSessionValidity]);
   
-  // CRITICAL FIX: Use either context user or local component state user
   const userToDisplay = currentUser || localUser;
   
-  // Logout handler
   const handleLogout = async () => {
     try {
-      // Clear all auth data first
       sessionStorage.removeItem('authenticatedUser');
       localStorage.removeItem('authInProgress');
       
-      // Then call logout
       await logout();
       
-      // Navigate after logout
       navigate('/login', { replace: true });
     } catch (error) {
       console.error('Logout error:', error);
       navigate('/login', { replace: true });
     }
   };
-  
-  // Show loading state
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -90,9 +80,8 @@ const Dashboard = () => {
     );
   }
   
-  // Redirect if no user data available
   if (!userToDisplay) {
-    // IMPORTANT: Add small delay before redirecting to avoid flicker
+
     setTimeout(() => navigate('/login'), 100);
     return (
       <div className="flex h-screen items-center justify-center">
@@ -101,7 +90,6 @@ const Dashboard = () => {
     );
   }
 
-  // Render dashboard with user data
   return (
     <div className="p-8 max-w-4xl mx-auto">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
