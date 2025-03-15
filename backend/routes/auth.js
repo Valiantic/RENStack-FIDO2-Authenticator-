@@ -1,4 +1,3 @@
-
 // INITIALIZATION
 const express = require('express');
 const { Fido2Lib } = require('fido2-lib');
@@ -389,7 +388,7 @@ router.post('/logout', (req, res) => {
 
 // ---------- LOGIN ----------
 
-// INITIAL LOGIN 
+// INITIAL LOGIN - Fix user existence checks
 router.post('/login', async (req, res) => {
   try {
     const { username } = req.body;
@@ -397,15 +396,15 @@ router.post('/login', async (req, res) => {
     
     console.log(`[DEBUG] Login attempt for username: "${username}"`);
     
+    // Check if user exists in database
     const userExists = await User.findOne({ where: { username } });
     if (!userExists) {
-      console.log(`[DEBUG] User not found: "${username}"`);
-      return res.status(400).json({ error: 'User not found' });
+      console.log(`[SECURITY] Login rejected - User does not exist: "${username}"`);
+      // Return a generic error message to avoid user enumeration
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
     
-    console.log(`[DEBUG] User found with ID: ${userExists.id}`);
-    
-  
+    // ...existing code after user check...
     try {
     
       const credentials = await Credential.findAll({ 
@@ -479,98 +478,58 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.post('/login-direct', async (req, res) => {
-  try {
-    const { username } = req.body;
-    if (!username) {
-      return res.status(400).json({ error: 'Username required' });
-    }
-    
-    console.log(`Direct login attempt for username: "${username}"`);
-    
-  
-    const user = await User.findOne({ where: { username }, include: Credential });
-    
-    if (!user) {
-      return res.status(400).json({ 
-        error: 'User not found',
-        message: 'No user found with this username',
-        userExists: false
-      });
-    }
-    
-    const hasCredentials = user.Credentials && user.Credentials.length > 0;
-    
-    console.log(`Found user: ${username} (ID: ${user.id}), has credentials: ${hasCredentials}`);
-    
-    req.session.authenticated = true;
-    req.session.username = username;
-    req.session.userId = user.id;
-    
-    await new Promise((resolve, reject) => {
-      req.session.save(err => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
-    
-    console.log(`User ${username} authenticated via direct login`);
-    
-    res.json({
-      status: 'ok',
-      message: 'Authentication successful',
-      authenticated: true,
-      userExists: true,
-      hasCredentials: hasCredentials,
-      user: {
-        id: user.id,
-        username: user.username,
-        displayName: user.displayName || username
-      }
-    });
-    
-  } catch (err) {
-    console.error('Direct login error:', err);
-    res.status(500).json({ 
-      error: 'Authentication failed', 
-      message: err.message 
-    });
-  }
-});
-
+// Improve the login response endpoint security
 router.post('/login/response', methodCheck, async (req, res) => {
   try {
     console.log('Login response received:', req.body);
     const { id, rawId, type, response, _challengeBackup } = req.body;
 
-    let challenge = req.session?.challenge;
+    // Get username from session or request
     let username = req.session?.username;
-    
-    if (!challenge && _challengeBackup) {
-      console.log('[DEBUG] Using client-provided challenge backup');
-      challenge = _challengeBackup;
-    }
     
     if (!username && req.body.username) {
       console.log('[DEBUG] Using client-provided username backup');
       username = req.body.username;
-    }
-
-    if (!challenge) {
-      throw new Error('No challenge found in session or request');
+      
+      // CRITICAL: Verify that this username exists in database
+      const userExists = await User.findOne({ where: { username } });
+      if (!userExists) {
+        console.log(`[SECURITY] Login response rejected - User does not exist: "${username}"`);
+        return res.status(401).json({ error: 'Invalid credentials' });
+      }
     }
 
     if (!username) {
       throw new Error('No username found in session or request');
     }
 
+    // Get challenge from session or backup
+    let challenge = req.session?.challenge;
+    
+    if (!challenge && _challengeBackup) {
+      console.log('[DEBUG] Using client-provided challenge backup');
+      challenge = _challengeBackup;
+    }
+
+    if (!challenge) {
+      throw new Error('No challenge found in session or request');
+    }
+
+    // Get user with credentials
     const user = await User.findOne({
       where: { username },
       include: [{ model: Credential }]
     });
 
-    if (!user || !user.Credentials.length) {
-      throw new Error('No credentials found for user');
+    // Check if user exists with credentials
+    if (!user) {
+      console.log(`[SECURITY] User not found: "${username}"`);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (!user.Credentials || user.Credentials.length === 0) {
+      console.log(`[SECURITY] No credentials found for user: "${username}"`);
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     const credential = user.Credentials[0];
@@ -648,11 +607,72 @@ router.post('/login/response', methodCheck, async (req, res) => {
 
   } catch (err) {
     console.error('Login verification error:', err);
-    res.status(500).json({
-      error: 'Authentication verification failed',
-      message: err.message,
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    // Return generic error to avoid user enumeration
+    res.status(401).json({
+      error: 'Authentication failed',
+      message: 'Invalid credentials'
     });
+  }
+});
+
+// Secure the direct login endpoint
+router.post('/login-direct', async (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username) {
+      return res.status(400).json({ error: 'Username required' });
+    }
+    
+    console.log(`Direct login attempt for username: "${username}"`);
+    
+    // NEVER create users during login flow
+    const user = await User.findOne({ where: { username }, include: Credential });
+    
+    if (!user) {
+      console.log(`[SECURITY] Direct login rejected - User does not exist: "${username}"`);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    // Check if user has credentials
+    const hasCredentials = user.Credentials && user.Credentials.length > 0;
+    
+    if (!hasCredentials) {
+      console.log(`[SECURITY] Direct login rejected - No credentials for user: "${username}"`);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    // Only continue if user exists and has credentials
+    // ...existing authentication code...
+    req.session.authenticated = true;
+    req.session.username = username;
+    req.session.userId = user.id;
+    
+    await new Promise((resolve, reject) => {
+      req.session.save(err => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    console.log(`User ${username} authenticated via direct login`);
+    
+    res.json({
+      status: 'ok',
+      message: 'Authentication successful',
+      authenticated: true,
+      userExists: true,
+      hasCredentials: hasCredentials,
+      user: {
+        id: user.id,
+        username: user.username,
+        displayName: user.displayName || username
+      }
+    });
+    
+  } catch (err) {
+    console.error('Direct login error:', err);
+    // Return generic error to avoid user enumeration
+    res.status(401).json({ error: 'Invalid credentials' });
   }
 });
 

@@ -49,42 +49,53 @@ const Login = () => {
       
       localStorage.setItem('temp_username', username);
       
-      const assertionOptions = await getLoginOptions(username);
-      
-      setMessage('Please follow the instructions on your authenticator device...');
-      const assertionResponse = await getCredential(assertionOptions);
-      
-      setMessage('Verifying your passkey...');
-      
-      if (localStorage.getItem('login_challenge_backup')) {
-        assertionResponse._challengeBackup = localStorage.getItem('login_challenge_backup');
-      }
-  
-      const verificationRes = await sendLoginResponse(assertionResponse);
-      
-      if (verificationRes.status === 'ok') {
-        console.log('Authentication successful!', verificationRes);
+      // First check if user exists
+      try {
+        const assertionOptions = await getLoginOptions(username);
         
-        const userData = {
-          id: verificationRes.user?.id || Date.now(),
-          username: verificationRes.user?.username || username,
-          displayName: verificationRes.user?.displayName || username
-        };
+        setMessage('Please follow the instructions on your authenticator device...');
+        const assertionResponse = await getCredential(assertionOptions);
         
-        sessionStorage.setItem('authenticatedUser', JSON.stringify(userData));
-        localStorage.setItem('authInProgress', 'true');
+        setMessage('Verifying your passkey...');
         
-        login(userData);
+        if (localStorage.getItem('login_challenge_backup')) {
+          assertionResponse._challengeBackup = localStorage.getItem('login_challenge_backup');
+        }
+    
+        const verificationRes = await sendLoginResponse(assertionResponse);
         
-        setAuthSuccess(true);
-        setMessage('Login successful! Redirecting to dashboard...');
-        
-        setTimeout(() => {
-          console.log('Login successful, forcing navigation to dashboard');
-          window.location.href = '/dashboard'; 
-        }, 500);
-      } else {
-        throw new Error(verificationRes.message || 'Login failed');
+        if (verificationRes.status === 'ok') {
+          console.log('Authentication successful!', verificationRes);
+          
+          const userData = {
+            id: verificationRes.user?.id || Date.now(),
+            username: verificationRes.user?.username || username,
+            displayName: verificationRes.user?.displayName || username
+          };
+          
+          sessionStorage.setItem('authenticatedUser', JSON.stringify(userData));
+          localStorage.setItem('authInProgress', 'true');
+          
+          login(userData);
+          
+          setAuthSuccess(true);
+          setMessage('Login successful! Redirecting to dashboard...');
+          
+          setTimeout(() => {
+            console.log('Login successful, forcing navigation to dashboard');
+            window.location.href = '/dashboard'; 
+          }, 500);
+        } else {
+          throw new Error(verificationRes.message || 'Login failed');
+        }
+      } catch (error) {
+        // Check for specific unauthorized or invalid credential errors
+        if (error.response?.status === 401 || 
+            error.message?.includes('Invalid credentials') ||
+            error.message?.includes('User not found')) {
+          throw new Error('Invalid username or passkey. Please check your credentials.');
+        }
+        throw error;
       }
     } catch (error) {
       if (error.message?.includes('User not found')) {

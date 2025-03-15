@@ -140,28 +140,18 @@ export const sendLoginResponse = async (assertionResponse) => {
       hasResponse: !!payload.response
     });
     
-    try {
-      console.log('Sending login response to server...');
-      const response = await api.post('/auth/login/response', payload);
-      console.log('Login successful! Server response:', response.data);
-      
-      if (response.data.user) {
-        sessionStorage.setItem('authenticatedUser', JSON.stringify(response.data.user));
-      }
-      
-      localStorage.removeItem('login_challenge_backup');
-      
-      return response.data;
-    } catch (loginError) {
-      console.warn('Standard login failed, trying with error bypass:', loginError.message);
-      
-      const directLoginResponse = await api.post('/auth/login-direct', {
-        username: localStorage.getItem('temp_username'),
-        credentialId: payload.id || payload.rawId
-      });
-      
-      return directLoginResponse.data;
+    // Only use the standard login endpoint - remove fallbacks that create users
+    console.log('Sending login response to server...');
+    const response = await api.post('/auth/login/response', payload);
+    console.log('Login successful! Server response:', response.data);
+    
+    if (response.data.user) {
+      sessionStorage.setItem('authenticatedUser', JSON.stringify(response.data.user));
     }
+    
+    localStorage.removeItem('login_challenge_backup');
+    
+    return response.data;
   } catch (error) {
     console.error('Login response submission failed:', error);
     console.error('Error details:', {
@@ -170,6 +160,8 @@ export const sendLoginResponse = async (assertionResponse) => {
       status: error.response?.status
     });
     
+    // Don't attempt to use fallback login methods for non-existent users
+    // Let the error propagate to the UI
     let errorMessage = 'Login failed: ';
     if (error.response?.data?.error) {
       errorMessage += error.response.data.error;
@@ -178,7 +170,7 @@ export const sendLoginResponse = async (assertionResponse) => {
     } else if (error.message) {
       errorMessage += error.message;
     } else {
-      errorMessage += 'Unknown error occurred';
+      errorMessage += 'Invalid username or credentials';
     }
     
     throw new Error(errorMessage);
